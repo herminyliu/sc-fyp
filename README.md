@@ -193,3 +193,5 @@ dtype: float64
 当把`max_value`参数拿掉之后，函数`sc.tl.neighbors`的异常未消失，只是图存在些许扰动，看来邻接图的异常不是由于`sc.pp.scale`导致的。
 
 可以看看在计算leiden时抛出的exception总数，和异常边的总数是否一样。
+
+

@@ -12,8 +12,10 @@ FILTER_GENES_MIN_CELLS = 10
 MAX_GENES_BY_COUNTS_1 = 9700
 MAX_GENES_BY_COUNTS_2 = 11500
 MAX_GENES_BY_COUNTS_3 = 5700
-SAVING_FILE_PATH = './preprocessed_data_123_noBatchEffect.h5ad'  # 应该为h5ad文件
-SAVING_FIG_FOLDER = './preprocessed_figures_123_noBatchEffect'
+PREPROCESS_SAVING_FILE_PATH = './preprocessed_data_123_noBatchEffect.h5ad'  # 应该为h5ad文件
+PREPROCESS_SAVING_FIG_FOLDER = './preprocessed_figures_123_noBatchEffect'
+IS_AUTOSAVE = False
+IS_AUTOSHOW = True
 
 
 def preprocess_data(pp_adata, with_batches=False):
@@ -45,7 +47,10 @@ def preprocess_data(pp_adata, with_batches=False):
     )
 
     # 绘制散点图，横纵轴含义如x，y所示，均为adata.obs
-    sc.pl.scatter(pp_adata, x="total_counts", y="n_genes_by_counts")
+    if with_batches:
+        sc.pl.scatter(pp_adata, x="total_counts", y="n_genes_by_counts", color="batch")
+    else:
+        sc.pl.scatter(pp_adata, x="total_counts", y="n_genes_by_counts")
 
     # 只留下最多有MAX_GENES_BY_COUNTS种基因的单细胞
     bool_lst_1 = ((pp_adata.obs.batch == "1") & (pp_adata.obs.n_genes_by_counts < MAX_GENES_BY_COUNTS_1)) | ((pp_adata.obs.batch == "2") & (pp_adata.obs.n_genes_by_counts < MAX_GENES_BY_COUNTS_2))
@@ -72,21 +77,25 @@ def preprocess_data(pp_adata, with_batches=False):
         sc.pp.regress_out(pp_adata, keys=["total_counts"])
 
     # 找到高变基因
-    sc.pp.highly_variable_genes(pp_adata, min_mean=0.0125, max_mean=3, min_disp=0.5, flavor="seurat")
+    sc.pp.highly_variable_genes(pp_adata, n_top_genes=3000, min_mean=0.0125, max_mean=3, min_disp=0.5, flavor="seurat")
 
     # 对高变基因作图
     sc.pl.highly_variable_genes(pp_adata)
 
-    # 将数据归一化，均值为0，方差为1，归一化后大于max_value的值截断到max_value
-    sc.pp.scale(pp_adata, max_value=10)
-
-    # 将anadata对象保存
-    pp_adata.write_h5ad(SAVING_FILE_PATH)
+    # 将数据归一化，均值为0，方差为1，归一化后大于max_value的值截断到max_value, zero_center这个参数代表是否要将数据的均值归到0
+    # 如果zero_center为True，那么数据会只保留[-max_value, max_value]
+    # 如果zero_center为False，那么数据会只保留[-inf, max_value]
+    sc.pp.scale(pp_adata, max_value=10, zero_center=True)
 
     return pp_adata
 
 
 def annotate_cells(a_adata: AnnData):
+    # 这里必须要注意，不能写成adata_1 = adata[adata.obs.index.str.split('.')[-2] == 1, :]
+    # adata.obs.index.str.split('.')返回的是一个“列表的列表”
+    # .str[-2]代表的操作是“对列表中的每一个元素（这是列表），取每个元素（这是列表）中的倒数第二个元素，并且替代（注意替代）原有元素”
+    # 首先，需要和字符串1作比较；其次，最后一个.str是pandas提供的针对series和dataframe的字符串方法，可以逐元素操作。
+
     # 提取批次信息
     batch_info = a_adata.obs.index.str.split('.').str[-2]
 
@@ -111,23 +120,23 @@ def check_identical_cells(u_adata: AnnData):
     from scipy.sparse import csr_matrix
     import numpy as np
 
-    # # 检查数据是否是稀疏矩阵
-    # if isinstance(u_adata.X, csr_matrix):
-    #     data = u_adata.X.toarray()
-    #     print("储存格式为稀疏矩阵")
-    # else:
-    #     data = u_adata.X
-    #     print("储存格式不为稀疏矩阵")
-    #
-    # # 检查是否存在完全相同的细胞
-    # unique_cells, indices = np.unique(data, axis=0, return_inverse=True)
-    # if len(unique_cells) < len(data):
-    #     print(f'Found {len(data) - len(unique_cells)} duplicate cells.')
-    # else:
-    #     print('No duplicate cells found.')
+    # 检查数据是否是稀疏矩阵
+    if isinstance(u_adata.X, csr_matrix):
+        data = u_adata.X.toarray()
+        print("储存格式为稀疏矩阵")
+    else:
+        data = u_adata.X
+        print("储存格式不为稀疏矩阵")
 
-    u_adata = sc.pp.scrublet(u_adata, copy=True, batch_key='batch')
-    print("The number of predicted scrublet cells is:", np.sum(u_adata.obs["predicted_doublet"] == True))
+    # 检查是否存在完全相同的细胞
+    unique_cells, indices = np.unique(data, axis=0, return_inverse=True)
+    if len(unique_cells) < len(data):
+        print(f'Found {len(data) - len(unique_cells)} duplicate cells.')
+    else:
+        print('No duplicate cells found.')
+
+    # u_adata = sc.pp.scrublet(u_adata, copy=True, batch_key='batch')
+    # print("The number of predicted scrublet cells is:", np.sum(u_adata.obs["predicted_doublet"] == True))
 
 
 def setting():
@@ -137,20 +146,26 @@ def setting():
     sc.logging.print_header()
     # 设置图像参数，保存信息
     sc.settings.set_figure_params(dpi=150, dpi_save=300, facecolor="white")
-    sc.settings.figdir = SAVING_FIG_FOLDER
-    sc.settings.autosave = True
-    sc.settings.autoshow = False
+    sc.settings.figdir = PREPROCESS_SAVING_FIG_FOLDER
+    sc.settings.autosave = IS_AUTOSAVE
+    sc.settings.autoshow = IS_AUTOSHOW
+
+
+def read_origin_text(file_path):
+    origin_adata = sc.read_text(file_path, delimiter='\t')
+    transposed_X = origin_adata.X.T
+    adata = sc.AnnData(X=transposed_X, var=origin_adata.obs, obs=origin_adata.var)
+    return adata
 
 
 if __name__ == '__main__':
     setting()
     # 读取文本文件，并转置
-    # origin_adata = sc.read_text(FILE_PATH, delimiter='\t')
-    # transposed_X = origin_adata.X.T
-    # adata = sc.AnnData(X=transposed_X, var=origin_adata.obs, obs=origin_adata.var)
+    adata = read_origin_text(PREPROCESS_SAVING_FILE_PATH)
 
-    # 直接读取Anndata
-    adata = sc.read_h5ad(FILE_PATH)
+    adata = annotate_cells(adata)
+
+    adata.write_h5ad("./data_annotated_123.h5ad")
 
     # 检查数据中是否存在 NaN 值
     if np.isnan(adata.X).any():
@@ -160,22 +175,9 @@ if __name__ == '__main__':
 
     check_identical_cells(adata)
 
-    # 提取每个细胞的批次信息
-    # adata_1 = adata[adata.obs.index.str.split('.').str[-2] == '1', :]
-    # adata_2 = adata[adata.obs.index.str.split('.').str[-2] == '2', :]
-    # adata_3 = adata[adata.obs.index.str.split('.').str[-2] == '3', :]
+    adata = preprocess_data(adata, with_batches=True)
 
-    # 这里必须要注意，不能写成adata_1 = adata[adata.obs.index.str.split('.')[-2] == 1, :]
-    # adata.obs.index.str.split('.')返回的是一个“列表的列表”
-    # .str[-2]代表的操作是“对列表中的每一个元素（这是列表），取每个元素（这是列表）中的倒数第二个元素，并且替代（注意替代）原有元素”
-    # 首先，需要和字符串1作比较；其次，最后一个.str是pandas提供的针对series和dataframe的字符串方法，可以逐元素操作。
-
-    # adata = preprocess_data(adata, with_batches=True)
-
-    # # 检查数据
-    # if len(adata.obs.cell_time.unique()) != 5:
-    #     print(f"某个发育时期的细胞完全被过滤了，仅剩{adata.obs.cell_time.unique()} 时期的细胞")
-    # elif len(adata.obs.batch.unique()) != 3:
-    #     print(f"某个batch的细胞完全被过滤了，仅剩{adata.obs.batch.unique()} batch的细胞")
-    # else:
-    #     print("细胞发育时期和batch均有剩余")
+    print("预处理完成" + "="*50)
+    print(f"细胞数: {adata.n_obs}, 基因数: {adata.n_vars}")
+    print(f"包含{adata.obs.cell_time.unique()} 时期的细胞")
+    print(f"包含{adata.obs.batch.unique()} batch的细胞")

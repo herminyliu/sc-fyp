@@ -9,13 +9,13 @@ IS_AUTOSAVE = False
 IS_AUTOSHOW = True
 
 
-def cluster_umap(u_adata):
-    sc.pp.pca(u_adata, svd_solver="arpack", n_comps=50)
+def cluster_umap(u_adata, leiden_resolution):
+    sc.pp.pca(u_adata, svd_solver=None, zero_center=True, n_comps=50)
     # sc.pl.pca_variance_ratio(u_adata, log=True, n_pcs=50)
     sc.pp.neighbors(u_adata, n_neighbors=10, n_pcs=40)
     sc.tl.leiden(
         u_adata,
-        resolution=0.9,
+        resolution=leiden_resolution,
         random_state=42,
         flavor="igraph",
         n_iterations=2,
@@ -29,6 +29,11 @@ def cluster_umap(u_adata):
 
 
 def debug_pp_neighbors(u_adata):
+    '''
+    对sc.pp.neighbors(u_adata, n_neighbors, n_pcs)生成的KNN邻接矩阵进行表征
+    :param u_adata: 传入的Anndata
+    :return: None
+    '''
     import numpy as np
     import matplotlib.pyplot as plt
     sc.pp.pca(u_adata, svd_solver="arpack", n_comps=50)
@@ -77,11 +82,21 @@ def debug_pp_neighbors(u_adata):
     plt.show()
 
 
-def finding_marker_gene(m_adata, method: Literal["logreg", "t-test", "wilcoxon", "t-test_overestim_var"]):
-    sc.tl.rank_genes_groups(m_adata, groupby="leiden", method=method)
-    sc.tl.rank_genes_groups(m_adata, groupby="cell_type", method=method)
-    sc.settings.figdir = f"{SAVING_FIG_FOLDER}/{method}"
-    sc.pl.rank_genes_groups(m_adata, n_genes=N_MARKER_GENE, sharey=False)
+def finding_marker_gene(m_adata, groupby, saving_fig_folder, n_marker_gene,
+                        method: Literal["logreg", "t-test", "wilcoxon", "t-test_overestim_var"], pl_groups=None):
+    sc.tl.rank_genes_groups(m_adata, groupby=groupby, groups="all", method=method)
+    sc.pl.rank_genes_groups(m_adata, n_genes=n_marker_gene, sharey=False)
+    sc.pl.rank_genes_groups_dotplot(
+        m_adata, groupby=groupby, groups=pl_groups,
+        standard_scale="var", n_genes=3,
+    )
+    from pandas import DataFrame
+    if method == "t-test":
+        DataFrame(m_adata.uns['rank_genes_groups']['logfoldchanges']).to_csv(f"./csv/rank_gene_{groupby}_{method}_lfg.csv")
+    DataFrame(m_adata.uns['rank_genes_groups']['pvals']).to_csv(f"./csv/rank_gene_{groupby}_{method}_pvals.csv")
+    DataFrame(m_adata.uns['rank_genes_groups']['names']).to_csv(f"./csv/rank_gene_{groupby}_{method}_names.csv")
+    # pts会不时地报错，很讨嫌
+    # DataFrame(m_adata.uns['rank_genes_groups']['pts']).to_csv(f"./csv/rank_gene_{groupby}_{method}_pts.csv")
     return m_adata
 
 
@@ -95,7 +110,7 @@ def plot_marker_gene(pm_adata, marker_genes_lst):
     sc.pl.dotplot(adata=pm_adata, var_names=marker_genes_lst, groupby="cell_type", save=f"cell_type_dendrogram.pdf", dendrogram=True)
 
 
-def plot_prior_info(pp_adata):
+def plot_umap(pp_adata):
     import matplotlib.pyplot as plt
     sc.pl.umap(pp_adata, color=["cell_type", "cell_time", "batch", "leiden"], wspace=0.7, hspace=0.25, ncols=2)
 

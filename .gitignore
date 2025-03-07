@@ -1,7 +1,12 @@
 /*.h5ad
 /temp.py
+/temp*
 /test.py
 /.idea
 /__pycache__
 /*.txt
 /batch_seperated
+/data
+/*.csv
+/temp
+/csv
