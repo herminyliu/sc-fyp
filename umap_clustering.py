@@ -4,7 +4,6 @@ from typing import Literal
 FILE_PATH = "preprocessed_data_123_noBatchEffect.h5ad"
 SAVING_FIG_FOLDER = './umap_clustering_figures_123_noBatchEffect'
 SAVING_FILE_PATH = './clustered_data_123_noBatchEffect.h5ad'  # 应该为h5ad文件
-N_MARKER_GENE = 25
 IS_AUTOSAVE = False
 IS_AUTOSHOW = True
 
@@ -83,19 +82,25 @@ def debug_pp_neighbors(u_adata):
 
 
 def finding_marker_gene(m_adata, groupby, saving_fig_folder, n_marker_gene,
-                        method: Literal["logreg", "t-test", "wilcoxon", "t-test_overestim_var"], pl_groups=None):
+                        method: Literal["logreg", "t-test", "wilcoxon", "t-test_overestim_var"],
+                        values_to_plot: Literal['scores', 'logfoldchanges', 'pvals', 'pvals_adj', 'log10_pvals', 'log10_pvals_adj'],
+                        pl_groups=None):
     sc.tl.rank_genes_groups(m_adata, groupby=groupby, groups="all", method=method)
-    sc.pl.rank_genes_groups(m_adata, n_genes=n_marker_gene, sharey=False)
+    sc.pl.rank_genes_groups(m_adata, n_genes=n_marker_gene, sharey=False,
+                            save=f"_{groupby}_{method}_{values_to_plot}.png",
+                            values_to_plot=values_to_plot,)
     sc.pl.rank_genes_groups_dotplot(
         m_adata, groupby=groupby, groups=pl_groups,
         standard_scale="var", n_genes=3,
+        save=f"rank_gene_dotplot_{groupby}_{method}_{values_to_plot}.png",
+        values_to_plot=values_to_plot
     )
     from pandas import DataFrame
     if method == "t-test":
-        DataFrame(m_adata.uns['rank_genes_groups']['logfoldchanges']).to_csv(f"./csv/rank_gene_{groupby}_{method}_lfg.csv")
-    DataFrame(m_adata.uns['rank_genes_groups']['pvals']).to_csv(f"./csv/rank_gene_{groupby}_{method}_pvals.csv")
-    DataFrame(m_adata.uns['rank_genes_groups']['names']).to_csv(f"./csv/rank_gene_{groupby}_{method}_names.csv")
-    # pts会不时地报错，很讨嫌
+        DataFrame(m_adata.uns['rank_genes_groups']['logfoldchanges']).to_csv(f"./csv/rank_gene_{groupby}_{method}_{values_to_plot}_lfg.csv")
+    DataFrame(m_adata.uns['rank_genes_groups']['pvals']).to_csv(f"./csv/rank_gene_{groupby}_{method}_{values_to_plot}_pvals.csv")
+    DataFrame(m_adata.uns['rank_genes_groups']['names']).to_csv(f"./csv/rank_gene_{groupby}_{method}_{values_to_plot}_names.csv")
+    # pts会不时地报错
     # DataFrame(m_adata.uns['rank_genes_groups']['pts']).to_csv(f"./csv/rank_gene_{groupby}_{method}_pts.csv")
     return m_adata
 
@@ -121,6 +126,7 @@ def plot_stack_violin(pp_adata, marker_genes_lst):
     sc.pl.stacked_violin(adata=pp_adata, var_names=marker_genes_lst, groupby="cell_type", dendrogram=False)
 
 
+# 调试使用代码，实际应用中下面可以随意修改
 if __name__ == "__main__":
     # 设置展示运行中会出现的信息
     sc.settings.verbosity = 1  # verbosity: errors (0), warnings (1), info (2), hints (3)

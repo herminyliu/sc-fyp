@@ -49,14 +49,16 @@ def preprocess_data(pp_adata, with_batches=False):
     # 绘制散点图，横纵轴含义如x，y所示，均为adata.obs
     if with_batches:
         sc.pl.scatter(pp_adata, x="total_counts", y="n_genes_by_counts", color="batch")
+        # 只留下最多有MAX_GENES_BY_COUNTS种基因的单细胞
+        bool_lst_1 = ((pp_adata.obs.batch == "1") & (pp_adata.obs.n_genes_by_counts < MAX_GENES_BY_COUNTS_1)) | (
+                    (pp_adata.obs.batch == "2") & (pp_adata.obs.n_genes_by_counts < MAX_GENES_BY_COUNTS_2))
+        bool_lst_2 = bool_lst_1 | (
+                    (pp_adata.obs.batch == "3") & (pp_adata.obs.n_genes_by_counts < MAX_GENES_BY_COUNTS_3))
+        pp_adata = pp_adata[bool_lst_2, :]
     else:
         sc.pl.scatter(pp_adata, x="total_counts", y="n_genes_by_counts")
+        pp_adata = pp_adata[pp_adata.obs.n_genes_by_counts < MAX_GENES_BY_COUNTS_1, :]
 
-    # 只留下最多有MAX_GENES_BY_COUNTS种基因的单细胞
-    bool_lst_1 = ((pp_adata.obs.batch == "1") & (pp_adata.obs.n_genes_by_counts < MAX_GENES_BY_COUNTS_1)) | ((pp_adata.obs.batch == "2") & (pp_adata.obs.n_genes_by_counts < MAX_GENES_BY_COUNTS_2))
-    bool_lst_2 = bool_lst_1 | ((pp_adata.obs.batch == "3") & (pp_adata.obs.n_genes_by_counts < MAX_GENES_BY_COUNTS_3))
-
-    pp_adata = pp_adata[bool_lst_2, :]
     if pp_adata.n_obs == 0:
         raise ValueError("过滤后数据为空，请检查过滤条件！")
 

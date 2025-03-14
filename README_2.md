@@ -8,9 +8,31 @@
 
 ## 原始数据文件
 
-- **原始数据文件**：`Expr_Mat_PS+Mesoderm_Filter_ComBat_No.Rep_Cell.Name.Merge_2.txt`
+- **原始数据文件**：`Expr_Mat_PS+Mesoderm_Filter_ComBat_No.Rep_Cell.Name.Merge_2.txt` 经过批次校正、细胞类型注释、细胞发育时间注释
+- **原始数据文件**：`Expr_Mat_PS+Mesoderm_Label.txt` 未经过批次校正、细胞类型注释、细胞发育时间注释
+
 - **测试数据文件**：`test_data.txt`  
   - 仅包含原始数据文件中前 4 个细胞（均来自第一批次），用于代码测试。
+- **Tips**:
+```
+(base) PS E:\Studying\sc-fyp> (Get-Content "Expr_Mat_PS+Mesoderm_Label.txt" -TotalCount 2) -split "`t" | Measure-Object | Select-Object -ExpandProperty Count
+27406
+(base) PS E:\Studying\sc-fyp> (Get-Content "Expr_Mat_PS+Mesoderm_Label.txt" -TotalCount 1) -split "`t" | Measure-Object | Select-Object -ExpandProperty Count
+13703
+(base) PS E:\Studying\sc-fyp> (Get-Content "Expr_Mat_PS+Mesoderm_Filter_ComBat_No.Rep_Cell.Name.Merge_2.txt" -TotalCount 1) -split "`t" | Measure-Object | Select-Object -ExpandProperty Count
+13702
+(base) PS E:\Studying\sc-fyp> (Get-Content "Expr_Mat_PS+Mesoderm_Filter_ComBat_No.Rep_Cell.Name.Merge_2.txt" -TotalCount 2) -split "`t" | Measure-Object | Select-Object -ExpandProperty Count
+27405
+```
+两个文件的细胞总数相同，均为**13702**个细胞，`Expr_Mat_PS+Mesoderm_Label.txt`第一行要多一个元素的原因是这个文件第一行第一个元素是`Genes`，多了这一个。
+
+```
+(base) PS E:\Studying\sc-fyp> (Get-Content "Expr_Mat_PS+Mesoderm_Filter_ComBat_No.Rep_Cell.Name.Merge_2.txt" | Measure-Object -Line).Lines
+14750
+(base) PS E:\Studying\sc-fyp> (Get-Content "Expr_Mat_PS+Mesoderm_Label.txt" | Measure-Object -Line).Lines
+29453
+```
+`Expr_Mat_PS+Mesoderm_Label.txt`的基因数要多得多。
 
 ---
 
