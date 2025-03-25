@@ -18,10 +18,10 @@ def cluster_umap(u_adata, leiden_resolution):
         random_state=42,
         flavor="igraph",
         n_iterations=2,
-        directed=False,
+        directed=False
     )
     sc.tl.paga(u_adata, groups="leiden")
-    sc.pl.paga(u_adata, plot=False)  # remove `plot=False` if you want to see the coarse-grained graph
+    sc.pl.paga(u_adata, plot=False, save=".png")  # remove `plot=False` if you want to see the coarse-grained graph
     # Plot PAGA first, so that `adata.uns['paga']['pos']` exists. Need to run sc.pl.paga before sc.pl.umap.
     sc.tl.umap(u_adata, init_pos='paga')
     return u_adata
@@ -83,12 +83,14 @@ def debug_pp_neighbors(u_adata):
 
 def finding_marker_gene(m_adata, groupby, saving_fig_folder, n_marker_gene,
                         method: Literal["logreg", "t-test", "wilcoxon", "t-test_overestim_var"],
-                        values_to_plot: Literal['scores', 'logfoldchanges', 'pvals', 'pvals_adj', 'log10_pvals', 'log10_pvals_adj'],
+                        values_to_plot: Literal['scores', 'logfoldchanges', 'pvals', 'pvals_adj', 'log10_pvals', 'log10_pvals_adj', None],
                         pl_groups=None):
     sc.tl.rank_genes_groups(m_adata, groupby=groupby, groups="all", method=method)
+
+    # sc.pl.rank_genes_groups 没有 values_to_plot参数
     sc.pl.rank_genes_groups(m_adata, n_genes=n_marker_gene, sharey=False,
-                            save=f"_{groupby}_{method}_{values_to_plot}.png",
-                            values_to_plot=values_to_plot,)
+                            save=f"_{groupby}_{method}_{values_to_plot}.png")
+
     sc.pl.rank_genes_groups_dotplot(
         m_adata, groupby=groupby, groups=pl_groups,
         standard_scale="var", n_genes=3,
@@ -115,10 +117,9 @@ def plot_marker_gene(pm_adata, marker_genes_lst):
     sc.pl.dotplot(adata=pm_adata, var_names=marker_genes_lst, groupby="cell_type", save=f"cell_type_dendrogram.pdf", dendrogram=True)
 
 
-def plot_umap(pp_adata):
+def plot_umap(pp_adata, save_fig_path=".png"):
     import matplotlib.pyplot as plt
-    sc.pl.umap(pp_adata, color=["cell_type", "cell_time", "batch", "leiden"], wspace=0.7, hspace=0.25, ncols=2)
-
+    sc.pl.umap(pp_adata, color=["cell_type", "cell_time", "batch", "leiden"], wspace=0.7, hspace=0.25, ncols=2, save=save_fig_path, projection="2d")
     plt.tight_layout()
 
 

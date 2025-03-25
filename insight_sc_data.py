@@ -3,10 +3,9 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
+import numpy as np
 
-from networkx.readwrite.json_graph.adjacency import adjacency_data
-
-import preprocess  # 假设 preprocess 是你的自定义模块
+# ALL the function below should be used in the 'if __name__ == "__main__"' of insight_sc_data.py
 
 # 定义全局变量，指定图片保存路径
 FIG_FOLDER_PATH = "./insight_figures"  # 图片保存文件夹路径
@@ -28,58 +27,36 @@ def plot_scatter(adata, x, y, title=None, filename="scatter_n_genes_by_total_cou
     save_figure(filename)
 
 
-def plot_cell_time_proportion(adata, filename="cell_time_proportion.png"):
-    """绘制细胞发育时段比例图并保存"""
-    if "cell_time" not in adata.obs.columns or "batch" not in adata.obs.columns:
-        raise ValueError("'cell_time' 或 'batch' 不在 adata.obs 中")
+def plot_cell_time_counts(adata, y_key="batch", x_key="cell_time", filename="batch_counts.png", is_proprotion=False):
+    """绘制细胞发育时段比例图并保存
 
-    # 计算每个批次中每个细胞发育时段的比例
-    counts = adata.obs.groupby(["batch", "cell_time"]).size().unstack(fill_value=0)
-    proportions = counts.div(counts.sum(axis=1), axis=0)
-
-    # 将比例数据转换为长格式，方便绘图
-    proportions_long = proportions.reset_index().melt(id_vars="batch", var_name="cell_time", value_name="proportion")
-
-    # 使用 seaborn 绘制点图
-    plt.figure(figsize=(8, 6))
-    sns.scatterplot(
-        data=proportions_long,
-        x="batch",
-        y="cell_time",
-        size="proportion",
-        sizes=(100, 1000),  # 调整点的大小范围
-        hue="proportion",  # 根据比例设置颜色
-        palette="viridis",  # 颜色方案
-        legend="full"
-    )
-
-    # 添加标题和标签
-    plt.title("Cell Time Proportion by Batch")
-    plt.xlabel("Batch")
-    plt.ylabel("Cell Time")
-    plt.legend(title="Proportion", bbox_to_anchor=(1.05, 1), loc='upper left')
-
-    # 保存图片
-    save_figure(filename)
-
-
-def plot_cell_time_counts(adata, filename="cell_time_counts.png"):
-    """绘制细胞发育时段比例图并保存"""
-    if "cell_time" not in adata.obs.columns or "batch" not in adata.obs.columns:
-        raise ValueError("'cell_time' 或 'batch' 不在 adata.obs 中")
+    参数:
+    adata: AnnData 对象，包含单细胞数据
+    batch_key: str, 指定表示批次的列名，默认为 'batch'
+    cell_time_key: str, 指定表示细胞发育时段的列名，默认为 'cell_time'
+    filename: str, 保存图片的文件名，默认为 'batch_counts.png'
+    """
+    if y_key not in adata.obs.columns or x_key not in adata.obs.columns:
+        raise ValueError(f"'{y_key}' 或 '{x_key}' 不在 adata.obs 中")
 
     # 计算每个批次中每个细胞发育阶段的单细胞数量
-    counts = adata.obs.groupby(["batch", "cell_time"]).size().unstack(fill_value=0)
+    counts = adata.obs.groupby([x_key, y_key]).size().unstack(fill_value=0)
+
+    if is_proprotion:
+        counts = counts.div(counts.sum(axis=1), axis=0)
 
     # 将计数数据转换为长格式，方便绘图
-    counts_long = counts.reset_index().melt(id_vars="batch", var_name="cell_time", value_name="count")
+    counts_long = counts.reset_index().melt(id_vars=x_key, var_name=y_key, value_name="count")
+
+    # 过滤掉值为0的数据点
+    counts_long = counts_long[counts_long["count"] > 0]
 
     # 使用 seaborn 绘制点图
     plt.figure(figsize=(8, 6))
     sns.scatterplot(
         data=counts_long,
-        x="batch",
-        y="cell_time",
+        x=x_key,
+        y=y_key,
         size="count",
         sizes=(100, 1000),  # 调整点的大小范围
         hue="count",  # 根据数量设置颜色
@@ -88,10 +65,13 @@ def plot_cell_time_counts(adata, filename="cell_time_counts.png"):
     )
 
     # 添加标题和标签
-    plt.title("Cell Time Count by Batch")
-    plt.xlabel("Batch")
-    plt.ylabel("Cell Time")
-    plt.legend(title="Count", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.title(f"Batch Count by {x_key}")
+    plt.xlabel(x_key)
+    plt.ylabel(y_key)
+    title = "Count"
+    if is_proprotion:
+        title = "Proportion"
+    plt.legend(title=title, bbox_to_anchor=(1.05, 1), loc='upper left')
 
     # 保存图片
     save_figure(filename)
@@ -102,6 +82,17 @@ def plot_violin_n_genes_by_batch(adata, filename="violin_by_batch.png"):
     # 创建子图，横向排列三张小提琴图
     fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10, 10), sharey=True)
     batches = adata.obs["batch"].unique()
+
+    # 遍历每个批次，绘制小提琴图并输出前 5% 最大值
+    for i, batch in enumerate(batches):
+        # 筛选当前批次的细胞数据
+        subset = adata.obs[adata.obs["batch"] == batch]
+
+        # 计算前 5% 最大值（95% 分位数）
+        top_5_percent_value = np.percentile(subset["n_genes_by_counts"], q=95)
+        top_10_percent_value = np.percentile(subset["n_genes_by_counts"], q=90)
+        print(f"Batch {batch}: 前 5% 最大值 = {top_5_percent_value}")
+        print(f"Batch {batch}: 前 10% 最大值 = {top_10_percent_value}")
 
     # 遍历每个批次，绘制小提琴图
     for i, batch in enumerate(batches):
@@ -125,7 +116,7 @@ def plot_violin_n_genes_by_batch(adata, filename="violin_by_batch.png"):
     plt.tight_layout()
 
     # 保存图片
-    save_figure(filename)
+    # save_figure(filename)
 
 
 def plot_violin_n_genes_by_time(adata, filename="violin_by_time.png"):
@@ -331,30 +322,163 @@ def plot_grouped_violin(adata, filename="grouped_violin.png"):
     save_figure(filename)
 
 
+def plot_gene_regulation_heatmap(adata, feature_key: str, feature_values: list, save_csv_path="gene_regulation_heatmap_data.csv",
+                                 pval_threshold: float=0.05, figsize=(10, 8), cmap='bwr', save_fig_path="gene_regulation_heatmap.png"):
+    """
+    Plot a heatmap of up-regulated and down-regulated genes based on any cell feature.
+
+    Parameters:
+    - adata: AnnData object containing single-cell RNA-seq data and cell annotations.
+    - feature_key: str, the key in adata.obs that specifies the cell feature (e.g., developmental time, cell type).
+    - feature_values: list of floats, the values of cell feature. The sequence will the sequence displayed on the heatmap.
+    - pval_threshold: float, significance threshold for identifying up/down-regulated genes.
+    - figsize: tuple, size of the heatmap figure.
+    - cmap: str, color map for the heatmap (default is 'bwr' for blue-white-red).
+
+    Returns:
+    - None (displays the heatmap).
+    """
+    import matplotlib.pyplot as plt
+    from scipy.stats import ranksums
+    import concurrent.futures
+    # Check feature_values are valid
+    for feature in feature_values:
+        if feature not in adata.obs[feature_key].values.unique():
+            raise KeyError(f"Feature '{feature}' not found in adata.var['{feature_key}'].")
+    if len(feature_values) == 0:
+        raise ValueError("No feature values provided.")
+    if len(feature_values) < len(adata.obs[feature_key].values.unique()):
+        print(f"Warning: Provided {feature_values} are not complete."
+                         f"There are {len(adata.obs[feature_key].values.unique())} unique {feature_key} annotation values for the observation.")
+    if len(feature_values) > len(adata.obs[feature_key].values.unique()):
+        raise ValueError(f"Provided {feature_values} overflow."
+                         f"There are {len(adata.obs[feature_key].values.unique())} unique {feature_key} annotation values for the observation.")
+
+    # ------------------------------------
+
+    # 以下是没有使用多线程的代码
+    # Initialize heatmap matrices
+    # heatmap_matrix[i, j]: Number of up-regulated genes when comparing feature_values[i] vs feature_values[j]
+    # heatmap_matrix[j, i]: Number of down-regulated genes when comparing feature_values[i] vs feature_values[j]
+    # n_features = len(feature_values)
+    # heatmap_matrix = np.zeros((n_features, n_features))  # Matrix for up-regulated genes
+    #
+    # # Iterate over all pairs of feature values
+    # for i in range(0, n_features):
+    #     for j in range(i+1, n_features):
+    #         # Get cells for the two feature values
+    #         cells_type_i = adata[adata.obs[feature_key] == feature_values[i], :]
+    #         cells_type_j = adata[adata.obs[feature_key] == feature_values[j], :]
+    #
+    #         for gene in adata.var_names:
+    #             # Perform ranksums test to assess significance
+    #             _, pval = ranksums(cells_type_i[:, gene].X, cells_type_j[:, gene].X)
+    #             if pval < pval_threshold:
+    #                 # Calculate mean difference
+    #                 mean_diff = np.mean(cells_type_i[:, gene].X) - np.mean(cells_type_j[:, gene].X)
+    #                 if mean_diff > 0:
+    #                     heatmap_matrix[i, j] = heatmap_matrix[i, j] + 1
+    #                 else:
+    #                     heatmap_matrix[j, i] = heatmap_matrix[j, i] - 1
+
+    # ------------------------------------
+
+    n_features = len(feature_values)
+    heatmap_matrix = np.zeros((n_features, n_features))  # Matrix for up-regulated genes
+
+    # Define a function to process each (i, j) pair
+    def process_pair(i, j):
+        cells_type_i = adata[adata.obs[feature_key] == feature_values[i], :]
+        cells_type_j = adata[adata.obs[feature_key] == feature_values[j], :]
+        up_count = 0
+        down_count = 0
+
+        for gene in adata.var_names:
+            # Perform ranksums test to assess significance
+            _, pval = ranksums(cells_type_i[:, gene].X, cells_type_j[:, gene].X)
+            if pval < pval_threshold:
+                # Calculate mean difference
+                mean_diff = np.mean(cells_type_i[:, gene].X) - np.mean(cells_type_j[:, gene].X)
+                if mean_diff > 0:
+                    up_count += 1
+                else:
+                    down_count += 1
+
+        return i, j, up_count, down_count
+
+    # Use ThreadPoolExecutor to parallelize the outer loops
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+        for i in range(n_features):
+            for j in range(i + 1, n_features):
+                futures.append(executor.submit(process_pair, i, j))
+
+        # Collect results and update heatmap_matrix
+        for future in concurrent.futures.as_completed(futures):
+            i, j, up_count, down_count = future.result()
+            heatmap_matrix[i, j] += up_count
+            heatmap_matrix[j, i] -= down_count
+
+    # ------------------------------------
+
+    # Plot the heatmap
+    plt.figure(figsize=figsize)
+    color_bar_max = np.max(np.abs(heatmap_matrix))
+    plt.imshow(heatmap_matrix, cmap=cmap, vmin=(-1) * color_bar_max, vmax=color_bar_max)
+    plt.colorbar(label='Number of Up/Down-Regulated Genes')
+
+    # Set axis labels
+    plt.xticks(np.arange(n_features), feature_values, rotation=45)
+    plt.yticks(np.arange(n_features), feature_values)
+    plt.xlabel(f'Feature Value (j): {feature_key}')
+    plt.ylabel(f'Feature Value (i): {feature_key}')
+    plt.title(f'Up/Down-Regulated Genes Heatmap for {feature_key}')
+
+    # Add grid lines and annotations
+    for i in range(0, n_features):
+        for j in range(0, n_features):
+            if i == j:
+                continue
+            if heatmap_matrix[i, j] != 0:
+                plt.text(j, i, f'{int(heatmap_matrix[i, j])}', ha='center', va='center', color='black')
+
+    plt.savefig(save_fig_path, dpi=300)
+    np.savetxt(fname=save_csv_path, X=heatmap_matrix, fmt='%d')
+    print(f"Fig successfully saved to{save_fig_path}.")
+
+
 if __name__ == "__main__":
-    # 读取数据
-    # origin_adata = sc.read_text(preprocess.FILE_PATH, delimiter='\t')
-    # transposed_X = origin_adata.X.T
-    # adata = sc.AnnData(X=transposed_X, var=origin_adata.obs, obs=origin_adata.var)
-
-    # 注释细胞信息
-    # adata = preprocess.annotate_cells(adata)
-    adata = sc.read_h5ad("data_annotated_123.h5ad")
-
-    # adata.write_h5ad(filename="data_annotated_123.h5ad")
-
-    # 计算质量控制指标
-    # sc.pp.calculate_qc_metrics(adata, percent_top=None, log1p=False, inplace=True)
+    # ALL the function in this script should be used in the 'if __name__ == "__main__"' of insight_sc_data.py
+    # ALL the images produced will be saved in FIG_FOLDER_PATH via the function save_figure.
+    adata = sc.read_h5ad("raw_with_batch.h5ad")
 
     # 调用绘图函数并保存图片
     # plot_scatter(adata, x="total_counts", y="n_genes_by_counts", title="Total Counts vs n_genes_by_counts", filename="scatter_total_counts_vs_n_genes.png")
     # plot_cell_time_proportion(adata, filename="cell_time_proportion.png")
-    # plot_violin_by_batch(adata, filename="violin_by_batch.png")
+    # plot_violin_n_genes_by_batch(adata, filename="violin_by_batch.png")
     # plot_violin_by_time(adata, filename="violin_by_time.png")
     # plot_pairplot(adata, filename="pairplot.png")
     # plot_grouped_violin(adata, filename="grouped_violin.png")
     # plot_gene_frequency_by_batch(adata, batch_key="batch", filename="gene_frequency_distribution_by_batch_3.png")
     # plot_cell_time_counts(adata)
     # plot_gene_frequency_by_time(adata)
-    plot_grouped_violin(adata)
-
+    # plot_grouped_violin(adata)
+    # plot_cell_time_counts(adata)
+    plot_cell_time_counts(adata, filename="cell_type_batch_counts.png")
+    # plot_gene_regulation_heatmap(adata=adata, feature_key="cell_type", save_fig_path="type_before_correction.png",
+    #                              save_csv_path="type_before_correction.csv",
+    #                              feature_values=["Primitive_Streak", "Mixed_mesoderm", "Nascent_mesoderm",
+    #                                                         "Anterior_Primitive_Streak", "Somitic_mesoderm",
+    #                                                         "Pharyngeal_mesoderm", "Paraxial_mesoderm",
+    #                                                         "Intermediate_mesoderm"])
+    # plot_gene_regulation_heatmap(adata=adata, feature_key="cell_time", save_fig_path="time_before correction.png",
+    #                              save_csv_path="time_before_correction.csv",
+    #                              feature_values=["E65", "E675", "E70", "E725", "E75"])
+    # plot_gene_regulation_heatmap(adata=adata, feature_key="embryo_ID", save_fig_path="embryo_before_correction.png",
+    #                              save_csv_path="embryo_before_correction.csv",
+    #                              feature_values=["1", "2", "3", "4", "5", "6", "7", "10", "14", "15",
+    #                                              "18", "19", "20", "23", "26", "27", "30", "31", "32"],
+    #                              figsize=(16, 16))
+    # plot_gene_regulation_heatmap(adata=adata, feature_key="batch", save_fig_path="batch_before_correction.png",
+    #                              save_csv_path="batch_before_correction.csv",
+    #                              feature_values=["1", "2", "3"])
