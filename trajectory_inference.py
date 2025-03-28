@@ -36,7 +36,7 @@ def paga_scatter(ps_adata, color):
     sc.tl.draw_graph(ps_adata, init_pos="paga")
 
     sc.pl.draw_graph(
-        adata=ps_adata, color=color, legend_loc='right margin', wspace=0.5,
+        adata=ps_adata, color=color, legend_loc='right margin', wspace=2.0,
         save=f"_force_directed_graph_{str(color[0])}.png",
         ncols=4
     )
@@ -109,7 +109,7 @@ def pseudotime(dm_adata, n_branchings):
     """
     from numpy import flatnonzero, argsort, array
     # Check whether root time exist. Set all the cell in the earliest stage to be the root cells. only very small amount.
-    root_time = 'E65'
+    root_time = 'E6.5'
     if root_time not in dm_adata.obs['cell_time'].unique():
         raise ValueError(f"{root_time} not found in dm_adata.obs['cell_time']. Cannot set root cell.")
 
@@ -132,6 +132,8 @@ def pseudotime(dm_adata, n_branchings):
         raise KeyError("dm_adata.obs['dpt_groups'] or dm_adata.obs['dpt_order_indices'] is None. something is wrong in sc.tl.dpt.")
 
     if n_branchings >= 1:
+        print(dm_adata.obs["dpt_groups"].cat)
+        print(dm_adata.obs["dpt_groups"].cat.codes)
         sc.pl.dpt_groups_pseudotime(dm_adata, color_map="viridis", save=".png")
 
     if n_branchings == 0:

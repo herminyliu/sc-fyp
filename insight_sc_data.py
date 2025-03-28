@@ -450,8 +450,10 @@ def plot_gene_regulation_heatmap(adata, feature_key: str, feature_values: list, 
 if __name__ == "__main__":
     # ALL the function in this script should be used in the 'if __name__ == "__main__"' of insight_sc_data.py
     # ALL the images produced will be saved in FIG_FOLDER_PATH via the function save_figure.
-    adata = sc.read_h5ad("raw_with_batch.h5ad")
-
+    adata = sc.read_h5ad("raw_627d.h5ad")
+    adata.obs.rename(
+        columns={"stage": "cell_time", "cell": "cell_ID", "sequencing.batch": "batch", "celltype": "cell_type",
+                 "sample": "embryo_ID"}, inplace=True)
     # 调用绘图函数并保存图片
     # plot_scatter(adata, x="total_counts", y="n_genes_by_counts", title="Total Counts vs n_genes_by_counts", filename="scatter_total_counts_vs_n_genes.png")
     # plot_cell_time_proportion(adata, filename="cell_time_proportion.png")
@@ -464,7 +466,7 @@ if __name__ == "__main__":
     # plot_gene_frequency_by_time(adata)
     # plot_grouped_violin(adata)
     # plot_cell_time_counts(adata)
-    plot_cell_time_counts(adata, filename="cell_type_batch_counts.png")
+    plot_cell_time_counts(adata, filename="627_cell_type_batch_counts.png")
     # plot_gene_regulation_heatmap(adata=adata, feature_key="cell_type", save_fig_path="type_before_correction.png",
     #                              save_csv_path="type_before_correction.csv",
     #                              feature_values=["Primitive_Streak", "Mixed_mesoderm", "Nascent_mesoderm",

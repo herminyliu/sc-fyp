@@ -1,6 +1,8 @@
 import scanpy as sc
 from typing import Literal
 
+from anndata import AnnData
+
 FILE_PATH = "preprocessed_data_123_noBatchEffect.h5ad"
 SAVING_FIG_FOLDER = './umap_clustering_figures_123_noBatchEffect'
 SAVING_FILE_PATH = './clustered_data_123_noBatchEffect.h5ad'  # 应该为h5ad文件
@@ -8,10 +10,10 @@ IS_AUTOSAVE = False
 IS_AUTOSHOW = True
 
 
-def cluster_umap(u_adata, leiden_resolution):
+def cluster_umap(u_adata, leiden_resolution=0.9, n_neighbors=10, spread=1.0, min_dist=0.5):
     sc.pp.pca(u_adata, svd_solver=None, zero_center=True, n_comps=50)
     # sc.pl.pca_variance_ratio(u_adata, log=True, n_pcs=50)
-    sc.pp.neighbors(u_adata, n_neighbors=10, n_pcs=40)
+    sc.pp.neighbors(u_adata, n_neighbors=n_neighbors, n_pcs=40)
     sc.tl.leiden(
         u_adata,
         resolution=leiden_resolution,
@@ -23,7 +25,7 @@ def cluster_umap(u_adata, leiden_resolution):
     sc.tl.paga(u_adata, groups="leiden")
     sc.pl.paga(u_adata, plot=False, save=".png")  # remove `plot=False` if you want to see the coarse-grained graph
     # Plot PAGA first, so that `adata.uns['paga']['pos']` exists. Need to run sc.pl.paga before sc.pl.umap.
-    sc.tl.umap(u_adata, init_pos='paga')
+    sc.tl.umap(u_adata, init_pos='paga', min_dist=min_dist, spread=spread)
     return u_adata
 
 
@@ -85,26 +87,42 @@ def finding_marker_gene(m_adata, groupby, saving_fig_folder, n_marker_gene,
                         method: Literal["logreg", "t-test", "wilcoxon", "t-test_overestim_var"],
                         values_to_plot: Literal['scores', 'logfoldchanges', 'pvals', 'pvals_adj', 'log10_pvals', 'log10_pvals_adj', None],
                         pl_groups=None):
-    sc.tl.rank_genes_groups(m_adata, groupby=groupby, groups="all", method=method)
+    from numpy import sum, zeros
+    # 正确初始化拷贝
+    copy_m_adata = m_adata.copy()
+
+    # 收集需要排除的组的逻辑掩码
+    exclude_mask = zeros(len(copy_m_adata.obs), dtype=bool)
+
+    for group in m_adata.obs[groupby].unique():
+        group_count = sum(m_adata.obs[groupby] == group)
+        if group_count < 10:
+            print(f"Warning: group {group} has less than 10 samples. Excluding...")
+            # 标记需要排除的样本
+            exclude_mask |= (copy_m_adata.obs[groupby] == group).values
+
+    # 一次性过滤掉所有需排除的组
+    copy_m_adata = copy_m_adata[~exclude_mask, :]
+
+    sc.tl.rank_genes_groups(copy_m_adata, groupby=groupby, groups="all", method=method)
 
     # sc.pl.rank_genes_groups 没有 values_to_plot参数
-    sc.pl.rank_genes_groups(m_adata, n_genes=n_marker_gene, sharey=False,
+    sc.pl.rank_genes_groups(copy_m_adata, n_genes=n_marker_gene, sharey=False,
                             save=f"_{groupby}_{method}_{values_to_plot}.png")
 
     sc.pl.rank_genes_groups_dotplot(
-        m_adata, groupby=groupby, groups=pl_groups,
+        copy_m_adata, groupby=groupby, groups=pl_groups,
         standard_scale="var", n_genes=3,
         save=f"rank_gene_dotplot_{groupby}_{method}_{values_to_plot}.png",
         values_to_plot=values_to_plot
     )
     from pandas import DataFrame
     if method == "t-test":
-        DataFrame(m_adata.uns['rank_genes_groups']['logfoldchanges']).to_csv(f"./csv/rank_gene_{groupby}_{method}_{values_to_plot}_lfg.csv")
-    DataFrame(m_adata.uns['rank_genes_groups']['pvals']).to_csv(f"./csv/rank_gene_{groupby}_{method}_{values_to_plot}_pvals.csv")
-    DataFrame(m_adata.uns['rank_genes_groups']['names']).to_csv(f"./csv/rank_gene_{groupby}_{method}_{values_to_plot}_names.csv")
+        DataFrame(copy_m_adata.uns['rank_genes_groups']['logfoldchanges']).to_csv(f"./csv/rank_gene_{groupby}_{method}_{values_to_plot}_lfg.csv")
+    DataFrame(copy_m_adata.uns['rank_genes_groups']['pvals']).to_csv(f"./csv/rank_gene_{groupby}_{method}_{values_to_plot}_pvals.csv")
+    DataFrame(copy_m_adata.uns['rank_genes_groups']['names']).to_csv(f"./csv/rank_gene_{groupby}_{method}_{values_to_plot}_names.csv")
     # pts会不时地报错
     # DataFrame(m_adata.uns['rank_genes_groups']['pts']).to_csv(f"./csv/rank_gene_{groupby}_{method}_pts.csv")
-    return m_adata
 
 
 def plot_marker_gene(pm_adata, marker_genes_lst):
@@ -119,7 +137,7 @@ def plot_marker_gene(pm_adata, marker_genes_lst):
 
 def plot_umap(pp_adata, save_fig_path=".png"):
     import matplotlib.pyplot as plt
-    sc.pl.umap(pp_adata, color=["cell_type", "cell_time", "batch", "leiden"], wspace=0.7, hspace=0.25, ncols=2, save=save_fig_path, projection="2d")
+    sc.pl.umap(pp_adata, color=["cell_type", "cell_time", "batch", "leiden"], wspace=1.5, hspace=0.25, ncols=2, save=save_fig_path, projection="2d")
     plt.tight_layout()
 
 

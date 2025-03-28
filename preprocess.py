@@ -23,7 +23,8 @@ IS_AUTOSAVE = False
 IS_AUTOSHOW = True
 
 
-def preprocess_data(pp_adata: AnnData, with_batches: bool=False, with_multistrip: bool=False, method: Literal["combat", "mnn"]=None):
+def preprocess_data(pp_adata: AnnData, with_batches: bool=False, with_multistrip: bool=False,
+                    method: Literal["combat", "mnn"]=None, is_regressout=True):
     if method in ["combat", "mnn"] and with_batches is False:
         print("Warning: Claim no batch effect but still do batch correction. May lead to over smooth of the data!")
 
@@ -69,13 +70,13 @@ def preprocess_data(pp_adata: AnnData, with_batches: bool=False, with_multistrip
         raise ValueError("过滤后数据为空，请检查过滤条件！")
 
     # 将每个细胞的总读数归一化为target_sum指示的值
-    sc.pp.normalize_total(pp_adata, target_sum=1e4, inplace=True)
+    sc.pp.normalize_total(pp_adata, target_sum=1e4, inplace=True, copy=False)
 
     # 将数据对数化
-    sc.pp.log1p(pp_adata)
+    sc.pp.log1p(pp_adata, copy=False)
 
     # 找到高变基因
-    sc.pp.highly_variable_genes(pp_adata, n_top_genes=120000, flavor="seurat")
+    sc.pp.highly_variable_genes(pp_adata, n_top_genes=3000, flavor="seurat")
 
     # 对高变基因作图
     sc.pl.highly_variable_genes(pp_adata)
@@ -84,26 +85,29 @@ def preprocess_data(pp_adata: AnnData, with_batches: bool=False, with_multistrip
         # DeepSeek建议“如果批次效应与某些技术性偏差（如测序深度）强相关，建议先去除这些技术性偏差，再处理批次效应”
         # Regress out (mostly) unwanted sources of variation.只对adata中的obs中的total_counts操作，方差为1
         # sc.pp.regress_out(pp_adata, keys=["batch"])
-        sc.pp.regress_out(pp_adata, keys=["total_counts"])
+        if is_regressout:
+            sc.pp.regress_out(pp_adata, keys=["total_counts"], copy=False)
         # 使用 ComBat 进行批次校正
-        sc.pp.combat(pp_adata, key='batch')
+        sc.pp.combat(pp_adata, key='batch', inplace=True)
     elif method == "mnn":
         # Do remember to receive the return value of sc.external.pp.mnn_correct!
         # It is recommended to pass log-transformed matrices/AnnData objects to mnn_correct, and use HVGs instead of all the genes.
         # If you use mnn, then no regress out will be performed.
         # The speed of mnn: Finishes correcting ~50000 cells/19 batches * ~30000 genes in ~12h on a 16 core 32GB mem server.
-        sc.pp.regress_out(pp_adata, keys=["total_counts"])
+        if is_regressout:
+            sc.pp.regress_out(pp_adata, keys=["total_counts"])
         pp_adata = pp_adata[:, pp_adata.var['highly_variable'] == True]
-        print(pp_adata)
         adata_list = [pp_adata[pp_adata.obs['batch'] == batch].copy() for batch in pp_adata.obs['batch'].values.unique()]
         pp_adata, mnn_list, angle_list = mnn.mnn_correct(adata_list[0], adata_list[1], adata_list[2], batch_key='batch', var_subset=None,
                                    k=20, sigma=1.0, do_concatenate=True, n_jobs=16)
     elif not with_batches:
-        sc.pp.regress_out(pp_adata, keys=["total_counts"])
+        if is_regressout:
+            sc.pp.regress_out(pp_adata, keys=["total_counts"])
     else:
         print("Warning: Have not specified whether contain batch effect nor to use any method to correct!")
         print("Warning: Do as no batch effect and do no correction!")
-        sc.pp.regress_out(pp_adata, keys=["total_counts"])
+        if is_regressout:
+            sc.pp.regress_out(pp_adata, keys=["total_counts"])
 
     if not isinstance(pp_adata, AnnData):
         raise ValueError(f"In preprocess.py, after batch correction, pp_adata no longer is an AnnData object. The type is{type(pp_adata)}. The value is{pp_adata}")
@@ -198,7 +202,7 @@ def annotate_genes(a_adata: AnnData, gene_id_mapping_file_path: str):
         return a_adata
     else:
         # Identify duplicate indices in var.index
-        duplicate_gene_names = a_adata.var.index[a_adata.var.index.duplicated()]
+        duplicate_gene_names = a_adata.var.index[a_adata.var.index.duplicated(keep='first')]
 
         # Create a dictionary to store the sum of duplicate columns
         sum_dict = {}
@@ -206,13 +210,45 @@ def annotate_genes(a_adata: AnnData, gene_id_mapping_file_path: str):
         # Iterate over duplicate indices and sum the corresponding columns
         for gene_name in duplicate_gene_names:
             # Select columns with the same index
-            duplicate_columns = a_adata[:, a_adata.var.index == gene_name].X
+            duplicate_columns = a_adata.X[:, a_adata.var.index == gene_name]
             # Sum the columns along the axis (axis=1 for rows, axis=0 for columns)
             sum_dict[gene_name] = np.sum(duplicate_columns, axis=1)
 
         # Keep a copy of the duplicated
         # To keep all the complicated obs and var annotations
-        a_adata_duplicated = a_adata[:, a_adata.var.index.duplicated(keep='first')]
+        a_adata_duplicated = a_adata[:, a_adata.var.index.duplicated(keep="first")]
+
+        # NOTE: There seems a bug in pandas method pandas.Index.duplicated.
+        # NOTE: a_adata.var.index.duplicated(keep="first") should only keep the index of duplicated genes first shown.
+        # NOTE: But if a gene has three duplication, this method will keep two copies instead of one!
+
+        # if not a_adata_duplicated.var.index.is_unique:
+        #     print(f"Warning: a_adata_duplicated.var.index contain duplicated gene names."
+        #                      f"a_adata_duplicated.var.index:{a_adata_duplicated.var.index}")
+        #     a_adata_duplicated = a_adata_duplicated[:, ~a_adata_duplicated.var.index.duplicated(keep="first")]
+
+        def remove_duplicated_genes(duplicated: AnnData) -> AnnData:
+            """
+            递归地移除 a_adata_duplicated.var.index 中的重复基因名，直到没有重复值为止。
+
+            参数:
+                duplicated (anndata.AnnData): 包含基因表达数据的 AnnData 对象。
+
+            返回:
+                anndata.AnnData: 处理后的 AnnData 对象，确保 var.index 中没有重复值。
+            """
+            if not duplicated.var.index.is_unique:
+                print(f"Warning: a_adata_duplicated.var.index contains duplicated gene names. "
+                      f"a_adata_duplicated.var.index: {duplicated.var.index}")
+                # 移除重复值，保留第一个出现的基因名
+                duplicated = duplicated[:, ~duplicated.var.index.duplicated(keep="first")]
+                # 递归调用，直到没有重复值
+                return remove_duplicated_genes(duplicated)
+            else:
+                # 如果没有重复值，返回处理后的 AnnData 对象
+                return duplicated
+
+        a_adata_duplicated = remove_duplicated_genes(a_adata_duplicated)
 
         # Remove ALL duplicate columns from the AnnData object
         a_adata = a_adata[:, ~a_adata.var.index.duplicated(keep=False)]
