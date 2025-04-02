@@ -1,5 +1,5 @@
 import scanpy as sc
-from numpy import array
+from anndata import AnnData
 
 FILE_PATH = "clustered_data_123_noBatchEffect.h5ad"
 SAVING_FIG_FOLDER = './TI'
@@ -43,7 +43,7 @@ def paga_scatter(ps_adata, color):
     return ps_adata
 
 
-def plot_fa_color_pesudotime(p_adata):
+def plot_fa_color_pseudotime(p_adata):
     """
     Plot 2D ForceAtlas manifold map coloring with p_adata.obs['dpt_order_indices']
 
@@ -53,7 +53,7 @@ def plot_fa_color_pesudotime(p_adata):
     Returns:
         No returns
     """
-    if 'dpt_order_indices' not in p_adata.obs.columns:
+    if 'dpt_order_indices' not in p_adata.obs_keys():
         raise KeyError(f"'dpt_order_indices' not found. Please compute dpt first.")
     tl_drawgraph_layout = ['fr', 'drl', 'kk', 'grid_fr', 'lgl', 'rt', 'rt_circular', 'fa']
     tl_drawgraph_key = [f'X_draw_graph_{i}' for i in tl_drawgraph_layout]
@@ -90,50 +90,72 @@ def plot_fa_color_pesudotime(p_adata):
 
 
 def diff(dm_adata, color: list[str]):
+    """
+    Do diffusion map analysis and plot graph.
+
+    :param dm_adata: Anndata object
+    :param color: mapping colors to observation annotation to distinguish.
+    :return:
+    """
     sc.tl.diffmap(dm_adata, n_comps=15)
     sc.pl.diffmap(dm_adata, color=color,
                   ncols=4, save=f"diffmap_{str(color[0])}.png")
     return dm_adata
 
 
-def pseudotime(dm_adata, n_branchings):
+def pseudotime(dm_adata: AnnData, n_branchings):
     """
-        Cited from the scanpy docs:
+    Do pseudotime calculation using scanpy.tl.dpt. if n_branchings > 1, plot sc.pl.dpt_groups_pseudotime.
+
+    Note: Cited from the scanpy docs:
+        ------------------
         dpt() requires running neighbors(), first. dpt() also requires to run diffmap() first.
         As previously, dpt() came with a default parameter of n_dcs=10 but diffmap() has a default parameter of n_comps=15,
         you need to pass n_comps=10 in diffmap() in order to exactly reproduce previous dpt() results.
+        ------------------
+        while in this repo, neighbors() is run in paga and umap clustering while diffmap() is run in fa2 previously,
+        this script assert dm_adata contain the results already.
 
-        WARNING: No root cell found. To compute pseudotime, pass the index or expression vector of a root cell, one of:
-        adata.uns['iroot'] = root_cell_index
-        adata.var['xroot'] = adata[root_cell_name, :].X
+    :param dm_adata: AnnData object
+    :param n_branchings: Number of branchings to detect. See details in scanpy.tl.dpt.
+    :return: AnnData object with newly added observation annotation about dpt result. Save a fig if n_branchings > 1
     """
     from numpy import flatnonzero, argsort, array
-    # Check whether root time exist. Set all the cell in the earliest stage to be the root cells. only very small amount.
+
+    # if calculated pp.neighbors before, should contain annotation "distances" "connectivities" both.
+    if (not any(name.startswith("distances") for name in dm_adata.obs_keys())
+            or (not any(name.startswith("connectivities") for name in dm_adata.obs_keys()))):
+        raise ValueError("adata have not computed sc.pp.neighbors() before.")
+
+    if "X_diffmap" not in dm_adata.obsm_keys():
+        raise ValueError("adata have not computed sc.tl.diffmap() before.")
+
+    # Check whether root time exist.
+    # Set all the cell in the earliest stage to be the root cells,which is only very small amount.
     root_time = 'E6.5'
     if root_time not in dm_adata.obs['cell_time'].unique():
         raise ValueError(f"{root_time} not found in dm_adata.obs['cell_time']. Cannot set root cell.")
 
-    # 设置 root 细胞
+    # set root cell, must do before run dpt.
     dm_adata.uns['iroot'] = flatnonzero(dm_adata.obs['cell_time'] == root_time)[0]
 
     # NOTE:
     # If n_branchings==0, no field adata.obs['dpt_groups'] adata.obs['dpt_order_indices'] will be written
     # sc.pl.dpt_timeseries requires adata.obs['dpt_order_indices'] adata.uns['dpt_changepoint'] to plot
-    # sc.pl.dpt_groups_pseudotime requires adata.obs['dpt_order_indices'] adata.obs['dpt_groups'] adata.uns['dpt_changepoint']to plot
+    # sc.pl.dpt_groups_pseudotime requires:
+    # adata.obs['dpt_order_indices'] adata.obs['dpt_groups'] adata.uns['dpt_changepoint']to plot
 
     sc.tl.dpt(dm_adata, n_dcs=15, n_branchings=n_branchings, copy=False)
 
     print("===scl.tl.dpt has been computed====")
 
-    if 'dpt_pseudotime' not in dm_adata.obs.columns:
+    if 'dpt_pseudotime' not in dm_adata.obs_keys():
         raise KeyError(f"'dpt_pseudotime' not found. DPT may not have run correctly.")
 
-    if n_branchings >= 1 and (('dpt_groups' not in dm_adata.obs.columns) or ('dpt_order_indices' not in dm_adata.obs.columns)):
+    if n_branchings >= 1 and (('dpt_groups' not in dm_adata.obs_keys()) or ('dpt_order_indices' not in dm_adata.obs_keys())):
         raise KeyError("dm_adata.obs['dpt_groups'] or dm_adata.obs['dpt_order_indices'] is None. something is wrong in sc.tl.dpt.")
 
     if n_branchings >= 1:
-        print(dm_adata.obs["dpt_groups"].cat)
-        print(dm_adata.obs["dpt_groups"].cat.codes)
         sc.pl.dpt_groups_pseudotime(dm_adata, color_map="viridis", save=".png")
 
     if n_branchings == 0:
@@ -145,12 +167,23 @@ def pseudotime(dm_adata, n_branchings):
     return dm_adata
 
 
-def plot_pseudotime(dm_adata, gene_list: list[str]=None, cell_sample_step=100, color_map="viridis"):
-    from numpy import argsort
+def plot_pseudotime(dm_adata: AnnData, gene_list: list[str] = None, cell_sample_step: int = 100, color_map="viridis"):
+    """
+    plot the expression of gene in gene_list over pesudotime using sc.pl.dpt_timeseries.
 
+    :param dm_adata: Anndata object
+    :param gene_list: Genes to plot on the heatmap.
+    :param cell_sample_step: int, set to 1 to use all cells.
+    :param color_map: color map used on heatmap.
+    :return: None(fig saved)
+    """
+    from numpy import argsort
+    if cell_sample_step < 1:
+        print("Warning: cell_sample_step should be no less than 1, automatically set to 1.")
+        cell_sample_step = 1
     missing_genes = [gene for gene in gene_list if gene not in dm_adata.var_names]
     if missing_genes:
-        raise ValueError(f"The following genes are not found in the dataset: {missing_genes}")
+            raise ValueError(f"The following genes are not found in the dataset: {missing_genes}")
 
     # 筛选基因
     adata_filtered = dm_adata[:, gene_list].copy()
@@ -164,6 +197,13 @@ def plot_pseudotime(dm_adata, gene_list: list[str]=None, cell_sample_step=100, c
 
 
 def plot_heatmap_gene_stage(dm_adata, gene_list: list[str]=None):
+    """
+    plot the expression of gene in gene_list over cell stages(E6.5 to E7.5).
+
+    :param dm_adata: Anndata object
+    :param gene_list: Genes to plot on the heatmap.
+    :return: None(fig saved)
+    """
     import numpy as np
     from anndata import AnnData
     from matplotlib.pyplot import show
@@ -202,6 +242,11 @@ def plot_heatmap_gene_stage(dm_adata, gene_list: list[str]=None):
 
 
 def setting():
+    """
+    do setting on if __name__ == "__main__": module in fa2_and_pseudotime.py
+
+    :return: None
+    """
     # 设置展示运行中会出现的信息
     sc.settings.verbosity = 3  # verbosity: errors (0), warnings (1), info (2), hints (3)
     # 打印运行环境
@@ -214,6 +259,7 @@ def setting():
 
 
 if __name__ == "__main__":
+    # This module is for debugging.
     setting()
     adata = sc.read_h5ad(FILE_PATH)
 
@@ -230,7 +276,7 @@ if __name__ == "__main__":
             "Somitic_mesoderm": "SM",
         }
     )
-    # 对leiden标签进行注释，0-5可以归为一类
+    # Annotate leiden
     adata.obs["leiden_anno"] = adata.obs["leiden"].cat.rename_categories(
         {
             "0": "0/PS",

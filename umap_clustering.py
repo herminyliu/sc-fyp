@@ -11,6 +11,16 @@ IS_AUTOSHOW = True
 
 
 def cluster_umap(u_adata, leiden_resolution=0.9, n_neighbors=10, spread=1.0, min_dist=0.5):
+    """
+
+    :param u_adata:
+    :param leiden_resolution:
+    :param n_neighbors:
+    :param spread:
+    :param min_dist:
+    :return:
+    """
+
     sc.pp.pca(u_adata, svd_solver=None, zero_center=True, n_comps=50)
     # sc.pl.pca_variance_ratio(u_adata, log=True, n_pcs=50)
     sc.pp.neighbors(u_adata, n_neighbors=n_neighbors, n_pcs=40)
@@ -30,11 +40,13 @@ def cluster_umap(u_adata, leiden_resolution=0.9, n_neighbors=10, spread=1.0, min
 
 
 def debug_pp_neighbors(u_adata):
-    '''
+    """
     对sc.pp.neighbors(u_adata, n_neighbors, n_pcs)生成的KNN邻接矩阵进行表征
+    Note: This is a temporary function and exclude from the pipeline.
+
     :param u_adata: 传入的Anndata
     :return: None
-    '''
+    """
     import numpy as np
     import matplotlib.pyplot as plt
     sc.pp.pca(u_adata, svd_solver="arpack", n_comps=50)
@@ -87,6 +99,18 @@ def finding_marker_gene(m_adata, groupby, saving_fig_folder, n_marker_gene,
                         method: Literal["logreg", "t-test", "wilcoxon", "t-test_overestim_var"],
                         values_to_plot: Literal['scores', 'logfoldchanges', 'pvals', 'pvals_adj', 'log10_pvals', 'log10_pvals_adj', None],
                         pl_groups=None):
+    """
+
+
+    :param m_adata:
+    :param groupby:
+    :param saving_fig_folder:
+    :param n_marker_gene:
+    :param method:
+    :param values_to_plot:
+    :param pl_groups:
+    :return:
+    """
     from numpy import sum, zeros
     # 正确初始化拷贝
     copy_m_adata = m_adata.copy()
@@ -126,6 +150,13 @@ def finding_marker_gene(m_adata, groupby, saving_fig_folder, n_marker_gene,
 
 
 def plot_marker_gene(pm_adata, marker_genes_lst):
+    """
+
+
+    :param pm_adata:
+    :param marker_genes_lst:
+    :return:
+    """
     # var_names should be a valid subset of adata.var_names.
     for gene in marker_genes_lst:
         if gene not in pm_adata.var_names:
@@ -136,6 +167,12 @@ def plot_marker_gene(pm_adata, marker_genes_lst):
 
 
 def plot_umap(pp_adata, save_fig_path=".png"):
+    """
+
+    :param pp_adata:
+    :param save_fig_path:
+    :return:
+    """
     import matplotlib.pyplot as plt
     sc.pl.umap(pp_adata, color=["cell_type", "cell_time", "batch", "leiden"], wspace=1.5, hspace=0.25, ncols=2, save=save_fig_path, projection="2d")
     plt.tight_layout()
@@ -145,8 +182,8 @@ def plot_stack_violin(pp_adata, marker_genes_lst):
     sc.pl.stacked_violin(adata=pp_adata, var_names=marker_genes_lst, groupby="cell_type", dendrogram=False)
 
 
-# 调试使用代码，实际应用中下面可以随意修改
 if __name__ == "__main__":
+    # This module is used for debugging.
     # 设置展示运行中会出现的信息
     sc.settings.verbosity = 1  # verbosity: errors (0), warnings (1), info (2), hints (3)
     # 打印运行环境
@@ -163,21 +200,7 @@ if __name__ == "__main__":
     # adata = finding_marker_gene(adata, "t-test")
     # adata = finding_marker_gene(adata, "wilcoxon")
     # adata.write_h5ad(SAVING_FILE_PATH)
-    marker_genes_lst = [
-    "Gm16120",
-    "Gm12446",
-    "Vmn1r18",
-    "Abca1",
-    "Gm42705",
-    "Ccdc171",
-    "Gm38037",
-    "Camk1g",
-    "D2Bwg1423e",
-    "Vps29",
-    "Bicdl1",
-    "Camk1g",
-    "Gm13442"
-]
+
     # plot_marker_gene(adata, marker_genes_lst)
     # plot_prior_info(adata)
     # plot_stack_violin(adata, marker_genes_lst)

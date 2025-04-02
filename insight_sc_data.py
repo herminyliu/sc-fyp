@@ -4,15 +4,19 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 import numpy as np
+from typing import Optional, Callable, Tuple
+from anndata import AnnData
 
 # ALL the function below should be used in the 'if __name__ == "__main__"' of insight_sc_data.py
 
-# 定义全局变量，指定图片保存路径
-FIG_FOLDER_PATH = "./insight_figures"  # 图片保存文件夹路径
-
 
 def save_figure(filename):
-    """保存当前图片到指定文件夹"""
+    """
+    Saving figures to FIG_FOLDER_PATH/filename
+
+    :param filename: given figure name, should include file extension.
+    :return: None
+    """
     if not os.path.exists(FIG_FOLDER_PATH):
         os.makedirs(FIG_FOLDER_PATH)  # 如果文件夹不存在，则创建
     filepath = os.path.join(FIG_FOLDER_PATH, filename)
@@ -21,34 +25,46 @@ def save_figure(filename):
 
 
 def plot_scatter(adata, x, y, title=None, filename="scatter_n_genes_by_total_counts.png"):
-    """绘制散点图并保存"""
+    """
+    Generate a scatter plot visualizing two observation annotations using scanpy.pl.scatter.
+
+    :param adata: single cell sequencing data, anndata.AnnData object.
+    :param x: Observation metadata column name for x-axis coordinates. Must exist in adata.obs.
+    :param y: Observation metadata column name for y-axis coordinates. Must exist in adata.obs.
+    :param title: Descriptive title displayed at the top of the plot. If None, no title will be shown.
+    :param filename: Saving figure filename, file extension should include.
+    :return: None
+    """
     # scanpy中的绘图函数的保存逻辑和matplotlib不一样，虽然依赖于matplotlib
     sc.pl.scatter(adata, x=x, y=y, title=title, show=False, color="batch")
     save_figure(filename)
 
 
-def plot_cell_time_counts(adata, y_key="batch", x_key="cell_time", filename="batch_counts.png", is_proprotion=False):
-    """绘制细胞发育时段比例图并保存
-
-    参数:
-    adata: AnnData 对象，包含单细胞数据
-    batch_key: str, 指定表示批次的列名，默认为 'batch'
-    cell_time_key: str, 指定表示细胞发育时段的列名，默认为 'cell_time'
-    filename: str, 保存图片的文件名，默认为 'batch_counts.png'
+def plot_cell_counts_scatterplot(adata, y_key="batch", x_key="cell_time", filename="batch_counts.png", is_proportion=False):
     """
-    if y_key not in adata.obs.columns or x_key not in adata.obs.columns:
-        raise ValueError(f"'{y_key}' 或 '{x_key}' 不在 adata.obs 中")
+    Generate a scatter plot visualizing cell numbers/proportion in
+    two dimension of observation annotation using seaborn.scatterplot.
+
+    :param is_proportion: Set True to plot cell proportion, set False to plot cell numbers.
+    :param adata: AnnData object
+    :param x_key: str, Observation metadata column name for x-axis coordinates. Must exist in adata.obs.
+    :param y_key: str, Observation metadata column name for y-axis coordinates. Must exist in adata.obs.
+    :param filename: str, Saving figure filename, should include file extension.
+    :return: None (saves plot to file)
+    """
+    if y_key not in adata.obs_keys() or x_key not in adata.obs_keys():
+        raise ValueError(f"'{y_key}' 或 '{x_key}' 不是adata对observation的注释。请检查前序工作是否完成")
 
     # 计算每个批次中每个细胞发育阶段的单细胞数量
     counts = adata.obs.groupby([x_key, y_key]).size().unstack(fill_value=0)
 
-    if is_proprotion:
+    if is_proportion:
         counts = counts.div(counts.sum(axis=1), axis=0)
 
     # 将计数数据转换为长格式，方便绘图
     counts_long = counts.reset_index().melt(id_vars=x_key, var_name=y_key, value_name="count")
 
-    # 过滤掉值为0的数据点
+    # Filter zeros out
     counts_long = counts_long[counts_long["count"] > 0]
 
     # 使用 seaborn 绘制点图
@@ -69,7 +85,7 @@ def plot_cell_time_counts(adata, y_key="batch", x_key="cell_time", filename="bat
     plt.xlabel(x_key)
     plt.ylabel(y_key)
     title = "Count"
-    if is_proprotion:
+    if is_proportion:
         title = "Proportion"
     plt.legend(title=title, bbox_to_anchor=(1.05, 1), loc='upper left')
 
@@ -78,7 +94,16 @@ def plot_cell_time_counts(adata, y_key="batch", x_key="cell_time", filename="bat
 
 
 def plot_violin_n_genes_by_batch(adata, filename="violin_by_batch.png"):
-    """按批次绘制小提琴图并保存"""
+    """
+    Plot violin polt of sequencing depth in each batch, showing the distribution of sequencing depth.
+
+    :param adata: single cell sequencing data, anndata.AnnData object.
+    :param filename: str, Saving figure filename, should include file extension.
+    :return: None (saves plot to file)
+    """
+    if "batch" not in adata.obs_keys() or "n_genes_by_counts" not in adata.obs_keys():
+        raise ValueError(f"batch 或 n_genes_by_counts 不是adata对observation的注释。请检查前序工作是否完成")
+
     # 创建子图，横向排列三张小提琴图
     fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10, 10), sharey=True)
     batches = adata.obs["batch"].unique()
@@ -116,104 +141,127 @@ def plot_violin_n_genes_by_batch(adata, filename="violin_by_batch.png"):
     plt.tight_layout()
 
     # 保存图片
-    # save_figure(filename)
-
-
-def plot_violin_n_genes_by_time(adata, filename="violin_by_time.png"):
-    """按发育时间绘制小提琴图并保存"""
-    if "cell_time" not in adata.obs.columns or "n_genes_by_counts" not in adata.obs.columns:
-        raise ValueError("'cell_time' 或 'n_genes_by_counts' 不在 adata.obs 中")
-
-    # 获取细胞的发育时段（假设有五个时间点）
-    cell_times = adata.obs["cell_time"].unique()
-    if len(cell_times) != 5:
-        raise ValueError("'cell_time' 必须有五个时间点")
-
-    # 创建子图，横向排列五张小提琴图
-    fig, axes = plt.subplots(nrows=1, ncols=5, figsize=(15, 10), sharey=True)
-    cell_times = adata.obs["cell_time"].unique()
-
-    # 遍历每个发育时段，绘制小提琴图
-    for i, cell_time in enumerate(cell_times):
-        # 筛选当前发育时段的细胞数据
-        subset = adata.obs[adata.obs["cell_time"] == cell_time]
-
-        # 绘制小提琴图
-        sns.violinplot(
-            y=subset["n_genes_by_counts"],
-            ax=axes[i],
-            color="skyblue",  # 设置颜色
-            inner="quartile"  # 显示四分位数
-        )
-
-        # 设置标题和标签
-        axes[i].set_title(f"Cell_Time: {cell_time}")
-        axes[i].set_xlabel(f"Cell_Time: {cell_time}")
-        axes[i].set_ylabel("n_genes_by_counts" if i == 0 else "")  # 只在第一个子图显示 y 轴标签
-
-    # 调整布局
-    plt.tight_layout()
-
-    # 保存图片
     save_figure(filename)
 
 
-def plot_gene_frequency_by_batch(adata, batch_key='batch', filename="gene_frequency_distribution_by_batch.png"):
+def plot_grouped_violin(
+        adata: AnnData,
+        group_key: str,
+        value_key: Optional[str] = None,
+        value_calculator: Optional[Callable[[AnnData], pd.Series]] = None,
+        title_prefix: str = "",
+        filename: str = "violin_plot.png",
+        figsize: Tuple[int, int] = (15, 6),
+        color: str = "skyblue",
+        clip_quantile: Optional[float] = None,
+        **kwargs
+) -> None:
     """
-    绘制每个批次中基因表达频数的小提琴图。
+    Generate grouped violin plots for observation metrics or calculated values.
 
-    参数:
-    - adata: AnnData 对象，包含单细胞测序数据。
-    - batch_key: str, adata.obs 中存储批次信息的列名，默认为 'batch'。
-    - figsize: tuple, 图像的大小，默认为 (10, 6)。
+    Can handle both precomputed observation metrics (value_key) and dynamically
+    calculated values (value_calculator) across specified groups.
+
+    Parameters:
+    -----------
+    adata : AnnData
+        Annotated data matrix with observations and variables
+    group_key : str
+        Column name in adata.obs for grouping cells, such as cell type, cell time.
+    value_key : str, optional
+        Precomputed numeric column in adata.obs to visualize, such as n_genes_by_counts(sequencing depth)
+    value_calculator : Callable, optional
+        Function that takes subset AnnData and returns pd.Series of values
+    title_prefix : str
+        Text prefix for subplot titles (e.g., "Batch", "Cell Time")
+    filename : str
+        Output filename with extension (e.g., .png/.pdf)
+    figsize : Tuple[int, int]
+        Base dimensions for figure layout
+    color : str
+        Matplotlib color name for violins
+    clip_quantile : float
+        Percentile (0-100) for upper value truncation
+    **kwargs
+        Additional arguments passed to sns.violinplot
+
+    Returns:
+    --------
+    None (saves plot to file)
+
+    Examples:
+    ---------
+    # Plot precomputed observation metric
+    plot_grouped_violin(adata, group_key='cell_time',
+                       value_key='n_genes_by_counts',
+                       title_prefix='Cell Time')
+
+    # Plot calculated gene frequencies
+    plot_grouped_violin(adata, group_key='batch',
+                       value_calculator=lambda x: pd.Series(x.X.sum(axis=0).A1),
+                       clip_quantile=95,
+                       title_prefix='Batch')
     """
-    import numpy as np
-    # 检查批次信息是否存在
-    if batch_key not in adata.obs:
-        raise ValueError(f"'{batch_key}' 不在 adata.obs 中。请提供正确的批次信息列名。")
+    # Validate input parameters
+    if group_key not in adata.obs:
+        raise ValueError(f"Group key '{group_key}' not found in adata.obs")
 
-    # 获取批次列表
-    batch_list = adata.obs[batch_key].unique()
+    if (value_key, value_calculator).count(None) != 1:
+        raise ValueError("Must specify exactly one of: value_key or value_calculator")
 
-    # 计算每个基因在每个批次中的表达频数
-    gene_freq_dict = {batch: [] for batch in batch_list}
+    if value_key and value_key not in adata.obs:
+        raise ValueError(f"Value key '{value_key}' not found in adata.obs")
 
-    # 创建子图，横向排列张小提琴图
-    fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10, 10), sharey=True)
+    # Get unique groups and determine plot layout
+    groups = adata.obs[group_key].unique()
+    n_groups = len(groups)
+    fig, axes = plt.subplots(
+        nrows=1,
+        ncols=n_groups,
+        figsize=(figsize[0] * max(n_groups, 1), figsize[1]),
+        sharey=True
+                 )
+    axes = np.array(axes).flatten()  # Handle single-subplot case
 
-    for batch in batch_list:
-        # 获取当前批次的细胞数据
-        batch_data = adata[adata.obs[batch_key] == batch]
+    # Generate plots for each group
+    for idx, (group, ax) in enumerate(zip(groups, axes)):
+        # Subset data
+        mask = adata.obs[group_key] == group
 
-        # 计算每个基因在当前批次中的表达频数
-        gene_freq = np.sum(batch_data.X, axis=0)
-        gene_freq_dict[batch] = gene_freq
+        subset = adata[mask]
 
+        # Calculate values
+        if value_calculator:
+            values = value_calculator(subset)
+        else:
+            values = subset.obs[value_key]
 
-    # 遍历每个batch，绘制小提琴图
-    for i, batch in enumerate(batch_list):
-        # 将基因表达频数转换为 pandas.Series
-        gene_freq_series = pd.Series(gene_freq_dict[batch])
-        # print(gene_freq_dict[batch][:10])  # 打印前 10 个基因的表达频数
-        # 截断极端高值（取 99% 分位数作为上限）
-        upper_limit = np.percentile(gene_freq_series, q=95)
-        gene_freq_series = np.clip(gene_freq_series, a_min=None, a_max=upper_limit)
+        # Apply value clipping
+        if clip_quantile:
+            cap = np.percentile(values, clip_quantile)
+            values = np.clip(values, None, cap)
 
-        # 绘制小提琴图
+        # Create violin plot
         sns.violinplot(
-            y=gene_freq_series,
-            ax=axes[i],
-            color="skyblue",  # 设置颜色
-            inner="quartile"  # 显示四分位数
+            y=values,
+            ax=ax,
+            color=color,
+            inner="quartile",
+            **kwargs
         )
 
-        # 设置标题和标签
-        axes[i].set_title(f"Batch: {batch}")
-        axes[i].set_xlabel(f"Batch: {batch}")
-        axes[i].set_ylabel("Gene Frequency" if batch == 0 else "")  # 只在第一个子图显示 y 轴标签
+        # Configure subplot
+        ax.set_title(f"{title_prefix}: {group}", pad=12)
+        ax.set_xlabel("")
+        # only label the y-axis on the most left graph.
+        if idx == 0:
+            y_label = value_key if value_key else "Computed Values"
+            ax.set_ylabel(y_label, labelpad=10)
 
+    # Finalize layout and save
     plt.tight_layout()
     save_figure(filename)
+    plt.close()
 
 
 def plot_gene_frequency_by_time(adata, time_key='cell_time', filename="gene_frequency_distribution_by_time.png"):
@@ -275,8 +323,14 @@ def plot_gene_frequency_by_time(adata, time_key='cell_time', filename="gene_freq
 
 
 def plot_pairplot(adata, filename="pairplot.png"):
-    """绘制散点图矩阵并保存"""
-    if "batch" not in adata.obs.columns or "cell_time" not in adata.obs.columns or "n_genes_by_counts" not in adata.obs.columns:
+    """
+    plot pair plot using seaborn.pairplot.
+
+    :param adata: single cell sequencing data, anndata.AnnData object.
+    :param filename: str, Saving figure filename, should include file extension.
+    :return: None (saves plot to file)
+    """
+    if "batch" not in adata.obs_keys() or "cell_time" not in adata.obs_keys() or "n_genes_by_counts" not in adata.obs_keys():
         raise ValueError("'batch', 'cell_time' 或 'n_genes_by_counts' 不在 adata.obs 中")
 
     # 绘制散点图矩阵
@@ -291,9 +345,16 @@ def plot_pairplot(adata, filename="pairplot.png"):
     save_figure(filename)
 
 
-def plot_grouped_violin(adata, filename="grouped_violin.png"):
-    """绘制分组小提琴图并保存"""
-    # if "batch" not in adata.obs.columns or "cell_time" not in adata.obs.columns or "n_genes_by_counts" not in adata.obs.columns:
+def plot_pair_violin(adata, filename="grouped_violin.png"):
+    """
+    plot pair plot using seaborn.pairplot.
+
+    :param adata: single cell sequencing data, anndata.AnnData object.
+    :param filename: str, Saving figure filename, should include file extension.
+    :return: None (saves plot to file)
+    """
+
+    # if "batch" not in adata.obs_keys() or "cell_time" not in adata.obs_keys() or "n_genes_by_counts" not in adata.obs_keys():
     #     raise ValueError("'batch', 'cell_time' 或 'n_genes_by_counts' 不在 adata.obs 中")
     import numpy as np
 
@@ -450,6 +511,8 @@ def plot_gene_regulation_heatmap(adata, feature_key: str, feature_values: list, 
 if __name__ == "__main__":
     # ALL the function in this script should be used in the 'if __name__ == "__main__"' of insight_sc_data.py
     # ALL the images produced will be saved in FIG_FOLDER_PATH via the function save_figure.
+
+    FIG_FOLDER_PATH = "./insight_figures"  # 图片保存文件夹路径
     adata = sc.read_h5ad("raw_627d.h5ad")
     adata.obs.rename(
         columns={"stage": "cell_time", "cell": "cell_ID", "sequencing.batch": "batch", "celltype": "cell_type",
@@ -466,7 +529,7 @@ if __name__ == "__main__":
     # plot_gene_frequency_by_time(adata)
     # plot_grouped_violin(adata)
     # plot_cell_time_counts(adata)
-    plot_cell_time_counts(adata, filename="627_cell_type_batch_counts.png")
+    plot_cell_counts_scatterplot(adata, filename="627_cell_type_batch_counts.png")
     # plot_gene_regulation_heatmap(adata=adata, feature_key="cell_type", save_fig_path="type_before_correction.png",
     #                              save_csv_path="type_before_correction.csv",
     #                              feature_values=["Primitive_Streak", "Mixed_mesoderm", "Nascent_mesoderm",

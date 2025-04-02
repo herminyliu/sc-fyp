@@ -2,7 +2,7 @@ import os
 
 import scanpy as sc
 import numpy as np
-import mnnpy as mnn
+# import mnnpy as mnn
 from anndata import AnnData
 from typing import Literal
 
@@ -25,10 +25,20 @@ IS_AUTOSHOW = True
 
 def preprocess_data(pp_adata: AnnData, with_batches: bool=False, with_multistrip: bool=False,
                     method: Literal["combat", "mnn"]=None, is_regressout=True):
+    """
+    Preprocess single cell sequencing data in pp_adata.
+
+    :param pp_adata: Single cell sequencing data, Anndata object.
+    :param with_batches: Do the pp_adata contains obvious batch effect.
+    :param with_multistrip: Do the scatter plot(x-axis is total_counts, all reads detected in one cell,
+    yaxis is n_genes_by_counts, all types of genes detected in one cell) show more than one strips.
+    :param method: The batch effect correction method to choose.
+    :param is_regressout: Do scanpy.pp.regressout on the sequence depth or not.
+    :return: Anndata object.
+    """
+
     if method in ["combat", "mnn"] and with_batches is False:
         print("Warning: Claim no batch effect but still do batch correction. May lead to over smooth of the data!")
-
-    # pp代表preprocessing
 
     # 绘制前n_top个最高表达基因的各单细胞内读数值分布箱线图
     sc.pl.highest_expr_genes(pp_adata, n_top=20)
@@ -121,12 +131,18 @@ def preprocess_data(pp_adata: AnnData, with_batches: bool=False, with_multistrip
 
 
 def annotate_cells(a_adata: AnnData):
+    """
+    Do cell annotation based on the row(observation) index.
+
+    :param a_adata: Single cell sequencing data, Anndata object.
+    :return: Anndata object.
+    """
     # 这里必须要注意，不能写成adata_1 = adata[adata.obs.index.str.split('.')[-2] == 1, :]
     # adata.obs.index.str.split('.')返回的是一个“列表的列表”
     # .str[-2]代表的操作是“对列表中的每一个元素（这是列表），取每个元素（这是列表）中的倒数第二个元素，并且替代（注意替代）原有元素”
     # 首先，需要和字符串1作比较；其次，最后一个.str是pandas提供的针对series和dataframe的字符串方法，可以逐元素操作。
 
-    # 提取批次信息
+    # Retrieve batch info.
     batch_info = a_adata.obs.index.str.split('.').str[-2]
 
     # 提取老师预先注释好的细胞类别信息
@@ -179,7 +195,7 @@ def annotate_genes(a_adata: AnnData, gene_id_mapping_file_path: str):
         ENSMUSG00000051953    Sox17
 
     Returns:
-    - None (the AnnData object is modified in place).
+    - Anndata object with annotated and deduplicated genes.
     """
     from pandas import read_csv
     import anndata as ad
@@ -229,13 +245,11 @@ def annotate_genes(a_adata: AnnData, gene_id_mapping_file_path: str):
 
         def remove_duplicated_genes(duplicated: AnnData) -> AnnData:
             """
-            递归地移除 a_adata_duplicated.var.index 中的重复基因名，直到没有重复值为止。
+            Recursively remove duplicate gene names in a_adata_duplicated.var.index, until no duplicates
 
-            参数:
-                duplicated (anndata.AnnData): 包含基因表达数据的 AnnData 对象。
+            :param duplicated: anndata.AnnData object, containing gene expression data.
 
-            返回:
-                anndata.AnnData: 处理后的 AnnData 对象，确保 var.index 中没有重复值。
+            :return: anndata.AnnData: deduplicated AnnData object，making sure no duplicates in var.index.
             """
             if not duplicated.var.index.is_unique:
                 print(f"Warning: a_adata_duplicated.var.index contains duplicated gene names. "
@@ -264,6 +278,12 @@ def annotate_genes(a_adata: AnnData, gene_id_mapping_file_path: str):
 
 
 def annotate_cell_id(a_adata: AnnData):
+    """
+    annotate ID of cells
+
+    :param a_adata: anndata.AnnData
+    :return: anndata.AnnData
+    """
     cellID_info = a_adata.obs.index.str.split('_').str[1]
     a_adata.obs['cell_ID'] = cellID_info
     return a_adata
@@ -271,11 +291,11 @@ def annotate_cell_id(a_adata: AnnData):
 
 def transfer_annotations(src_adata: AnnData, dest_adata: AnnData):
     """
-    将 src_adata 中的注释按照 cell_ID 一一对应地转移到 dest_adata 中。
+    Transfer the annotations from src_adata to dest_adata one-to-one based on cell_ID.
 
-    参数:
-        src_adata: 源 AnnData 对象，提供注释。
-        dest_adata: 目标 AnnData 对象，将接收注释。
+    Params:
+        src_adata: reference AnnData object.
+        dest_adata: target AnnData object, accepting annotation from reference.
     """
     # 确保 cell_ID 存在于两个 AnnData 对象中
     if "cell_ID" not in src_adata.obs.columns or "cell_ID" not in dest_adata.obs.columns:
@@ -306,6 +326,12 @@ def transfer_annotations(src_adata: AnnData, dest_adata: AnnData):
 
 
 def check_identical_cells(u_adata: AnnData):
+    """
+    check whether u_adata contains duplicated rows(cells).
+
+    :param u_adata: anndata.AnnData
+    :return: anndata.AnnData
+    """
     from scipy.sparse import csr_matrix
     import numpy as np
 
@@ -329,6 +355,12 @@ def check_identical_cells(u_adata: AnnData):
 
 
 def setting():
+    """
+    setting hyper params, only effective when directly run preprocess.py. This function only used in
+    if __name__ == "__main__" module of preprocess.py
+
+    :return: None
+    """
     # 设置展示运行中会出现的信息
     sc.settings.verbosity = 3  # verbosity: errors (0), warnings (1), info (2), hints (3)
     # 打印运行环境
@@ -341,6 +373,14 @@ def setting():
 
 
 def read_origin_text(file_path):
+    """
+    Read original data in txt format.
+    Note: since the txt file takes cells as columns while genes as rows, a transpose action is applied. If your dataset
+    Note: do not follow this rule, do remove transposed_X = origin_adata.X.T
+
+    :param file_path: txt file path
+    :return: anndata.AnnData
+    """
     origin_adata = sc.read_text(file_path, delimiter='\t')
     transposed_X = origin_adata.X.T
     adata = sc.AnnData(X=transposed_X, var=origin_adata.obs, obs=origin_adata.var)
