@@ -1,10 +1,12 @@
 import scanpy as sc
 from anndata import AnnData
+import matplotlib.pyplot as plt
+from pandas import DataFrame
+import igraph
 
 FILE_PATH = "clustered_data_123_noBatchEffect.h5ad"
-SAVING_FIG_FOLDER = './TI'
 IS_AUTOSAVE = True
-IS_AUTOSHOW = True
+IS_AUTOSHOW = False
 
 
 def paga(p_adata, color, groups):
@@ -20,12 +22,14 @@ def paga(p_adata, color, groups):
     """
     sc.tl.paga(p_adata, groups=groups)
     sc.pl.paga(
-        p_adata, color=color, labels=None, save=f"paga_{groups}.png"
+        layout="fa", random_state=100,
+        adata=p_adata, color=color, labels=None, save=f"paga_{groups}.png", fontsize=8, node_size_scale=1.0, node_size_power=0.5,
+        title=f"PAGA Abstract Graph"
     )
     return p_adata
 
 
-def paga_scatter(ps_adata, color):
+def paga_scatter(ps_adata: AnnData, color):
     """
         sc.pl.draw_graph绘制精细的paga散点图，图元素包含很多散点，每个点就是一个单细胞
         sc.pl.paga绘制的是粗略的图
@@ -34,6 +38,9 @@ def paga_scatter(ps_adata, color):
     """
 
     sc.tl.draw_graph(ps_adata, init_pos="paga")
+    (sc.get.obs_df(adata=ps_adata, obsm_keys=[('X_draw_graph_fa', 0), ('X_draw_graph_fa', 1)])
+     .to_csv("temp4/graph_coordinate.csv"))
+
 
     sc.pl.draw_graph(
         adata=ps_adata, color=color, legend_loc='right margin', wspace=2.0,
@@ -123,27 +130,27 @@ def pseudotime(dm_adata: AnnData, n_branchings):
     from numpy import flatnonzero, argsort, array
 
     # if calculated pp.neighbors before, should contain annotation "distances" "connectivities" both.
-    if (not any(name.startswith("distances") for name in dm_adata.obs_keys())
-            or (not any(name.startswith("connectivities") for name in dm_adata.obs_keys()))):
-        raise ValueError("adata have not computed sc.pp.neighbors() before.")
-
-    if "X_diffmap" not in dm_adata.obsm_keys():
-        raise ValueError("adata have not computed sc.tl.diffmap() before.")
+    # if (not any(name.startswith("distances") for name in dm_adata.obs_keys())
+    #         or (not any(name.startswith("connectivities") for name in dm_adata.obs_keys()))):
+    #     raise ValueError("adata have not computed sc.pp.neighbors() before.")
+    #
+    # if "X_diffmap" not in dm_adata.obsm_keys():
+    #     raise ValueError("adata have not computed sc.tl.diffmap() before.")
 
     # Check whether root time exist.
     # Set all the cell in the earliest stage to be the root cells,which is only very small amount.
-    root_time = 'E6.5'
-    if root_time not in dm_adata.obs['cell_time'].unique():
-        raise ValueError(f"{root_time} not found in dm_adata.obs['cell_time']. Cannot set root cell.")
+    root_time = 'Epiblast'
+    if root_time not in dm_adata.obs['cell_type'].unique():
+        raise ValueError(f"{root_time} not found in dm_adata.obs['cell_type']. Cannot set root cell.")
 
     # set root cell, must do before run dpt.
-    dm_adata.uns['iroot'] = flatnonzero(dm_adata.obs['cell_time'] == root_time)[0]
+    dm_adata.uns['iroot'] = flatnonzero(dm_adata.obs['cell_type'] == root_time)[0]
 
     # NOTE:
-    # If n_branchings==0, no field adata.obs['dpt_groups'] adata.obs['dpt_order_indices'] will be written
-    # sc.pl.dpt_timeseries requires adata.obs['dpt_order_indices'] adata.uns['dpt_changepoint'] to plot
-    # sc.pl.dpt_groups_pseudotime requires:
-    # adata.obs['dpt_order_indices'] adata.obs['dpt_groups'] adata.uns['dpt_changepoint']to plot
+    #   If n_branchings==0, no field adata.obs['dpt_groups'] adata.obs['dpt_order_indices'] will be written
+    #   sc.pl.dpt_timeseries requires adata.obs['dpt_order_indices'] adata.uns['dpt_changepoint'] to plot
+    #   sc.pl.dpt_groups_pseudotime requires:
+    #   adata.obs['dpt_order_indices'] adata.obs['dpt_groups'] adata.uns['dpt_changepoint']to plot
 
     sc.tl.dpt(dm_adata, n_dcs=15, n_branchings=n_branchings, copy=False)
 
@@ -259,53 +266,37 @@ def setting():
 
 
 if __name__ == "__main__":
+
+    SAVING_FIG_FOLDER = './temp4'
     # This module is for debugging.
     setting()
-    adata = sc.read_h5ad(FILE_PATH)
+    adata = sc.read_h5ad("h5ads/final_627_combat_re.h5ad")
+    cell_type_lst_a = ["Epiblast", "Primitive Streak", "Anterior Primitive Streak",
+                       "Def. endoderm", "Gut", "Visceral endoderm", "ExE endoderm"]
+    cell_type_lst_b = ["Epiblast", "Primitive Streak", "Nascent mesoderm", "Mixed mesoderm", "Mesenchyme",
+                       "Haematoendothelial progenitors", "Blood progenitors 1", "Blood progenitors 2"]
+    cell_type_lst_c = list(set(cell_type_lst_a + cell_type_lst_b))
+    # NOTE: cell_50327 cell_79163 are outlier cells, cell_86931 filtered.
+    # NOTE: cell_29635 cell_51875 cell_50514 cell_837, filtered.
+    sub_adata = adata[adata.obs['cell_type'].isin(cell_type_lst_c), :]
+    outlier_cells = ["cell_50327", "cell_79163", "cell_46746", "cell_29635", "cell_51875", "cell_50514", "cell_837",
+                     "cell_86931"]
+    sub_adata = sub_adata[~sub_adata.obs_names.isin(outlier_cells), :]
+    sub_adata = paga(p_adata=sub_adata, color="cell_type", groups="cell_type")
+    # sub_adata = paga_scatter(ps_adata=sub_adata, color="cell_type")
+    sc.pp.neighbors(sub_adata)
+    sub_adata = pseudotime(sub_adata, n_branchings=1)
+    with open("with_child_comp_genes.txt", "r") as file:
+        gene_lst = [line.strip() for i, line in enumerate(file) if i < 20]
+    plot_pseudotime(sub_adata, gene_list=gene_lst, cell_sample_step=1)
+    plot_fa_color_pseudotime(sub_adata)
 
-    # 对细胞类型进行缩写处理，避免图上元素覆盖交叠
-    adata.obs["cell_type_abbr"] = adata.obs["cell_type"].cat.rename_categories(
-        {
-            "Anterior_Primitive_Streak": "APS",
-            "Intermediate_mesoderm": "IM",
-            "Mixed_mesoderm": "MM",
-            "Nascent_mesoderm": "NM",
-            "Paraxial_mesoderm": "PAM",
-            "Pharyngeal_mesoderm": "PHM",
-            "Primitive_Streak": "PS",
-            "Somitic_mesoderm": "SM",
-        }
-    )
-    # Annotate leiden
-    adata.obs["leiden_anno"] = adata.obs["leiden"].cat.rename_categories(
-        {
-            "0": "0/PS",
-            "1": "1/PS",
-            "2": "2/PS",
-            "3": "3/PS",
-            "4": "4/PS",
-            "5": "5/PS",
-        }
-    )
-    groups = "cell_time"
-    genes_unique = [
-        "Abca1", "Ccdc171", "Camk1g", "Igsf23", "Vmn1r18", "Rab17",
-        "Nt5c1a", "D2Bwg1423e", "Vps29", "Exoc3l2", "Tmem268", "Irf7",
-        "Rnf115", "4833403J16Rik", "Stam2", "Hnrnpr", "Cd37", "Bicdl1",
-        "Rpap1", "Slc46a2", "Slc16a1", "Col6a3", "Nipsnap3a", "Fbxo10"
-    ]
-    new_genes = [
-        "Scn7a", "4930471C06Rik", "Arpc2", "Olfr476", "Psma5",
-        "Rnf40", "Fam24a", "Olfr67", "Rnf225", "Platr28",
-        "Hhat", "Polr3e", "Slc35f1", "B230303O12Rik", "2010013B24Rik",
-        "Nup205", "4930431F12Rik", "Serinc4", "4930520M14Rik", "Mcts1",
-        "4930563H07Rik", "Prdm11", "Aurkaip1", "Smlr1"
-    ]
+
 
     # 是否一定要先运行paga才再能运行paga_scatter呢？sc.tl.paga, sc.pl.paga, sc.tl.draw_graph, sc.pl.draw_graph函数逻辑复杂。
     # 实验证明不一定需要！因为在之前的绘制UMAP图时就跑过PAGA了。因为UMAP图的initial position就是PAGA的节点。sc.pl.draw_graph会自动判断传入的color参数是否为var中的基因，或对obs的注释。
     # TODO：
     # 如果为obs的categories类注释，则会自动细胞群体着色。如果为var_name中的基因，那么自动按照各单细胞中该基因的表达量着色。那么着色的值是什么？是scale后的那个表达量吗？
     # 而且draw_graph的得到的散点图的横轴纵轴的含义是？散点的分布和UMAP图的分布明显不一样，那么这又是什么算法？
-    adata = paga_scatter(ps_adata=adata, color=new_genes)
+
 

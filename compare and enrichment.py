@@ -56,7 +56,7 @@ def find_transition_genes(
     sc.tl.rank_genes_groups(
         adata_sub,
         groupby="comparison_group",
-        groups=["target"], # params group accept list object.
+        groups=["target"],  # params group accept list object.
         reference="reference",
         method="wilcoxon",
         use_raw=False  # 使用已经归一化后的数据
@@ -303,8 +303,10 @@ def cell_group_discrimination(cell_group_a="Primitive Streak", cell_group_b="Nas
     # 输出结果
     print(f"Found {len(transition_genes_df)} transition genes")
 
-    plot_genes_df = pd.concat(objs=[transition_genes_df.sort_values("logfoldchanges", ascending=False).head(10),
-                                    transition_genes_df.sort_values("pvals_adj", ascending=True).head(10)], axis=0)
+    # plot_genes_df = pd.concat(objs=[transition_genes_df.sort_values("logfoldchanges", ascending=False).head(10),
+    #                                 transition_genes_df.sort_values("pvals_adj", ascending=True).head(10)], axis=0)
+    plot_genes_df = transition_genes_df.sort_values("pvals_adj", ascending=True).head(15)
+
     gene_lst = [
         "RTN3",
         "SMG1", "PANK3", "MCM7",
@@ -317,27 +319,97 @@ def cell_group_discrimination(cell_group_a="Primitive Streak", cell_group_b="Nas
         "ATG3", "TOLLIP"]
     gene_lst = list(set(gene.capitalize() for gene in gene_lst))
 
-    # plot_merged_violin_comparison(adata=adata, gene_lst=plot_genes_df["names"].to_list(),
-    plot_merged_violin_comparison(adata=adata, gene_lst=gene_lst,
+    plot_merged_violin_comparison(adata=adata, gene_lst=plot_genes_df["names"].to_list(),
                                   groupby=groupby, cell_group_a=cell_group_a,
                                   cell_group_b=cell_group_b, save_dir=save_dir)
 
-    # plot_volcano(cell_group_a=cell_group_a, cell_group_b=cell_group_b, result_df=transition_genes_df, save_dir=save_dir)
+    plot_volcano(cell_group_a=cell_group_a, cell_group_b=cell_group_b, result_df=transition_genes_df, save_dir=save_dir)
+
+
+def fate_decision_analysis(adata, parent_type, child1_type, child2_type,
+                           n_genes=100, do_child_compare=False,**kwargs):
+    """
+    Enhanced version combining pseudotime analysis and visualization.
+
+    1. Identifies genes correlated with fate decision using pseudotime
+    2. Performs branch-specific differential expression
+    3. Visualizes top candidate genes
+
+    Pseudotime and PAGA trajectory will be recomputed in this function.
+    """
+
+    for i in [parent_type, child1_type, child2_type]:
+        if i not in adata.obs['cell_type'].unique():
+            raise ValueError(f"{i} not found in adata.obs['cell_type']. Please check params.")
+        
+    # Only keep three types of cells: [parent_type, child1_type, child2_type]
+    sub_adata = adata[adata.obs["cell_type"].isin([parent_type, child1_type, child2_type]), :]
+
+    def extract_diff_genes(f_adata, target, reference, f_n_genes):
+        # 执行差异分析1
+        sc.tl.rank_genes_groups(
+            f_adata,
+            groupby='cell_type',
+            groups=[target],
+            reference=reference,  # 直接比较两个子类型
+            method='wilcoxon'
+        )
+        de_genes = sc.get.rank_genes_groups_df(f_adata, group=target)
+        branch_genes = de_genes[de_genes["pvals"] < 0.001]['names'].tolist()
+        # branch_genes = de_genes.head(f_n_genes)['names'].tolist()
+        return branch_genes
+
+
+    def save_txt(file_name, gene_lst):
+        with open(file_name, 'w') as file:
+            for item in gene_lst:
+                file.write(f"{item}\n")
+
+
+    # Find the genes that has small p-vals in both parent-child comparison.
+    branch_genes_1 = extract_diff_genes(f_adata=sub_adata, target=child1_type, reference=parent_type, f_n_genes=n_genes)
+    save_txt(f"{child1_type}_vs_{parent_type}.txt", branch_genes_1)
+    branch_genes_2 = extract_diff_genes(f_adata=sub_adata, target=child2_type, reference=parent_type, f_n_genes=n_genes)
+    save_txt(f"{child2_type}_vs_{parent_type}.txt", branch_genes_2)
+    if do_child_compare:
+        branch_genes_3 = extract_diff_genes(f_adata=sub_adata, target=child2_type, reference=child1_type, f_n_genes=n_genes)
+        branch_genes_4 = extract_diff_genes(f_adata=sub_adata, target=child1_type, reference=child2_type, f_n_genes=n_genes)
+        child_comp_genes = set(branch_genes_3) | set(branch_genes_4)
+        candidate_genes = list(set(branch_genes_1) & set(branch_genes_2) & child_comp_genes)
+        save_txt(f"{parent_type}_{child1_type}_{child2_type}.txt", candidate_genes)
+    else:
+        candidate_genes = list(set(branch_genes_1) & set(branch_genes_2))
+    print(f"Found {len(candidate_genes)} significant genes in both two downstream directions.")
+
+
+    # Visualize using matrixplot for clearer temporal patterns
+    # sc.pl.matrixplot(
+    #     sub_adata,
+    #     var_names=candidate_genes,
+    #     groupby='cell_type',
+    #     standard_scale='var',
+    #     cmap='viridis',
+    #     title='Fate Decision Candidate Genes',
+    #     save=".png"
+    # )
 
 
 if __name__ == "__main__":
     """
     本脚本用于比较在单细胞测序数据集中，对两类细胞群体之间的表达的基因进行显著性检验及绘图，找到两个群体之间的基因表达的差异。
-    
     本脚本需要输入一个Anndata对象，其中包含单细胞测序数据，并且指定细胞按照何种方式分类，在该分类下的两个细胞群体的名称。
+    The entry of this script is this module.
     """
     adata = sc.read("./h5ads/final_627_combat_re.h5ad")  # 加载预处理数据
+    print(adata.n_vars)
     sc.settings.set_figure_params(dpi=300, dpi_save=300, facecolor="white")
     sc.settings.autosave = False
     sc.settings.autoshow = True
     sc.pp.filter_genes(adata, min_cells=300)
-
-    cell_group_discrimination(cell_group_a="Primitive Streak", cell_group_b="Nascent mesoderm",
-                              max_padj=0.01, min_logfc=0.5,
-                              groupby="cell_type", save_dir="discrimination_plot")
+    # Epiblast Primitive Streak Nascent mesoderm
+    # cell_group_discrimination(cell_group_a="Primitive Streak", cell_group_b="Anterior Primitive Streak",
+    #                           max_padj=0.01, min_logfc=0.5,
+    #                           groupby="cell_type", save_dir="discrimination_plot")
+    fate_decision_analysis(adata, parent_type="Primitive Streak",
+                           child1_type="Nascent mesoderm", child2_type="Anterior Primitive Streak", n_genes=400, do_child_compare=True)
 
