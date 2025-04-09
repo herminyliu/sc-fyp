@@ -3,8 +3,6 @@ import os
 import scanpy as sc
 import pandas as pd
 
-import fa2_and_pseudotime
-
 
 def find_transition_genes(
         adata: sc.AnnData,
@@ -64,10 +62,11 @@ def find_transition_genes(
 
     from pandas import DataFrame
     if save_csv:
-        DataFrame(adata_sub.uns['rank_genes_groups']['pvals']).to_csv(f"./csv/discrimination_{groupby}_{cell_group_a}_{cell_group_b}_pvals.csv")
-        DataFrame(adata_sub.uns['rank_genes_groups']['names']).to_csv(f"./csv/discrimination_{groupby}_{cell_group_a}_{cell_group_b}_names.csv")
+        DataFrame(adata_sub.uns['rank_genes_groups']['pvals']).to_csv(
+            f"./csv/discrimination_{groupby}_{cell_group_a}_{cell_group_b}_pvals.csv")
+        DataFrame(adata_sub.uns['rank_genes_groups']['names']).to_csv(
+            f"./csv/discrimination_{groupby}_{cell_group_a}_{cell_group_b}_names.csv")
         print(f"./csv/discrimination_{groupby}_{cell_group_a}_{cell_group_b}_pvals.csv successful saved.")
-
 
     # 提取结果
     result = sc.get.rank_genes_groups_df(adata_sub, group="target")
@@ -194,7 +193,7 @@ def plot_merged_violin_comparison(
             os.makedirs(save_dir)
 
     if figsize is None:
-        figsize = tuple([0.8*len(valid_genes), 0.4*len(valid_genes)])
+        figsize = tuple([0.8 * len(valid_genes), 0.4 * len(valid_genes)])
 
     # 构建绘图数据
     plot_data = []
@@ -267,17 +266,18 @@ def plot_merged_violin_comparison(
     if save_dir:
         if not os.path.exists(f"{save_dir}/{cell_group_a}_vs_{cell_group_b}"):
             os.makedirs(f"{save_dir}/{cell_group_a}_vs_{cell_group_b}")
-        plt.savefig(f"{save_dir}/{cell_group_a}_vs_{cell_group_b}/merged_violin_comparison.png", bbox_inches='tight', dpi=dpi)
+        plt.savefig(f"{save_dir}/{cell_group_a}_vs_{cell_group_b}/merged_violin_comparison.png", bbox_inches='tight',
+                    dpi=dpi)
         print(f"{save_dir}/{cell_group_a}_vs_{cell_group_b}/merged_violin_comparison.png successful saved")
         plt.close()
     else:
         plt.show()
 
 
-def cell_group_discrimination(cell_group_a="Primitive Streak", cell_group_b="Nascent mesoderm", groupby="cell_type", min_logfc=5.0,
-        max_padj=0.01, save_dir="discrimination_plot"):
+def cell_group_discrimination(cell_group_a="Primitive Streak", cell_group_b="Nascent mesoderm", groupby="cell_type",
+                              min_logfc=5.0,
+                              max_padj=0.01, save_dir="discrimination_plot"):
     """
-
     Do cell group gene expression comparison, the comparison is directed, with cell_group_a be the reference
     while cell_type_b be the target.
     The main method used in this function is scanpy.tl.rank_gene_groups.
@@ -326,8 +326,8 @@ def cell_group_discrimination(cell_group_a="Primitive Streak", cell_group_b="Nas
     plot_volcano(cell_group_a=cell_group_a, cell_group_b=cell_group_b, result_df=transition_genes_df, save_dir=save_dir)
 
 
-def fate_decision_analysis(adata, parent_type, child1_type, child2_type,
-                           n_genes=100, do_child_compare=False,**kwargs):
+def fate_decision_analysis(f_adata: sc.AnnData, parent_type: str, child1_type: str,
+                           n_genes: int = None, pval: float = 0.001, split_up_down=False):
     """
     Enhanced version combining pseudotime analysis and visualization.
 
@@ -337,15 +337,14 @@ def fate_decision_analysis(adata, parent_type, child1_type, child2_type,
 
     Pseudotime and PAGA trajectory will be recomputed in this function.
     """
-
-    for i in [parent_type, child1_type, child2_type]:
-        if i not in adata.obs['cell_type'].unique():
+    for i in [parent_type, child1_type]:
+        if i not in f_adata.obs['cell_type'].unique():
             raise ValueError(f"{i} not found in adata.obs['cell_type']. Please check params.")
-        
-    # Only keep three types of cells: [parent_type, child1_type, child2_type]
-    sub_adata = adata[adata.obs["cell_type"].isin([parent_type, child1_type, child2_type]), :]
 
-    def extract_diff_genes(f_adata, target, reference, f_n_genes):
+    # Only keep three types of cells: [parent_type, child1_type, child2_type]
+    sub_adata = f_adata[f_adata.obs["cell_type"].isin([parent_type, child1_type]), :]
+
+    def extract_diff_genes(f_adata, target, reference, f_n_genes=None, f_pval=0.001, f_split_up_down=True):
         # 执行差异分析1
         sc.tl.rank_genes_groups(
             f_adata,
@@ -354,44 +353,58 @@ def fate_decision_analysis(adata, parent_type, child1_type, child2_type,
             reference=reference,  # 直接比较两个子类型
             method='wilcoxon'
         )
-        de_genes = sc.get.rank_genes_groups_df(f_adata, group=target)
-        branch_genes = de_genes[de_genes["pvals"] < 0.001]['names'].tolist()
-        # branch_genes = de_genes.head(f_n_genes)['names'].tolist()
-        return branch_genes
+        de_genes: pd.DataFrame = sc.get.rank_genes_groups_df(f_adata, group=target)
+        if f_n_genes is not None:
+            de_genes = de_genes.head(f_n_genes)
+        else:
+            de_genes = de_genes[de_genes["pvals"] < f_pval]
 
+        all = de_genes['names'].tolist()
+
+        if f_split_up_down:
+            up = de_genes[de_genes["logfoldchanges"] > 0]['names'].tolist()
+            down = de_genes[de_genes["logfoldchanges"] < 0]['names'].tolist()
+
+            up_return_genes = list(set(up) & set(all))
+            down_return_genes = list(set(down) & set(all))
+            return_genes_dir = {"up": up_return_genes, "down": down_return_genes, "all": all}
+        else:
+            return_genes_dir = {"all": all}
+
+        return return_genes_dir
 
     def save_txt(file_name, gene_lst):
         with open(file_name, 'w') as file:
             for item in gene_lst:
                 file.write(f"{item}\n")
 
-
     # Find the genes that has small p-vals in both parent-child comparison.
-    branch_genes_1 = extract_diff_genes(f_adata=sub_adata, target=child1_type, reference=parent_type, f_n_genes=n_genes)
-    save_txt(f"{child1_type}_vs_{parent_type}.txt", branch_genes_1)
-    branch_genes_2 = extract_diff_genes(f_adata=sub_adata, target=child2_type, reference=parent_type, f_n_genes=n_genes)
-    save_txt(f"{child2_type}_vs_{parent_type}.txt", branch_genes_2)
-    if do_child_compare:
-        branch_genes_3 = extract_diff_genes(f_adata=sub_adata, target=child2_type, reference=child1_type, f_n_genes=n_genes)
-        branch_genes_4 = extract_diff_genes(f_adata=sub_adata, target=child1_type, reference=child2_type, f_n_genes=n_genes)
-        child_comp_genes = set(branch_genes_3) | set(branch_genes_4)
-        candidate_genes = list(set(branch_genes_1) & set(branch_genes_2) & child_comp_genes)
-        save_txt(f"{parent_type}_{child1_type}_{child2_type}.txt", candidate_genes)
-    else:
-        candidate_genes = list(set(branch_genes_1) & set(branch_genes_2))
-    print(f"Found {len(candidate_genes)} significant genes in both two downstream directions.")
 
+    if split_up_down:
+        return_dir = extract_diff_genes(f_adata=sub_adata, target=child1_type, reference=parent_type, f_n_genes=n_genes,
+                                        f_pval=pval, f_split_up_down=split_up_down)
+        save_txt(f"{parent_type}_vs_{child1_type}_up.txt", return_dir["up"])
+        save_txt(f"{parent_type}_vs_{child1_type}_down.txt", return_dir["down"])
+        print(f"Found {len(return_dir["up"])} up regulated significant genes.")
+        print(f"Found {len(return_dir["down"])} down regulated significant genes.")
+    else:
+        return_dir = extract_diff_genes(f_adata=sub_adata, target=child1_type, reference=parent_type, f_n_genes=n_genes,
+                                        f_pval=pval, f_split_up_down=split_up_down)
+        save_txt(f"{parent_type}_vs_{child1_type}_all.txt", return_dir["all"])
+        print(f"Found {len(return_dir["all"])} significant genes.")
 
     # Visualize using matrixplot for clearer temporal patterns
-    # sc.pl.matrixplot(
-    #     sub_adata,
-    #     var_names=candidate_genes,
-    #     groupby='cell_type',
-    #     standard_scale='var',
-    #     cmap='viridis',
-    #     title='Fate Decision Candidate Genes',
-    #     save=".png"
-    # )
+
+    def plot_matrix(adata, candidate_genes):
+        sc.pl.matrixplot(
+            adata,
+            var_names=candidate_genes,
+            groupby='cell_type',
+            standard_scale='var',
+            cmap='viridis',
+            title='Fate Decision Candidate Genes',
+            save=".png"
+        )
 
 
 if __name__ == "__main__":
@@ -409,7 +422,8 @@ if __name__ == "__main__":
     # Epiblast Primitive Streak Nascent mesoderm
     # cell_group_discrimination(cell_group_a="Primitive Streak", cell_group_b="Anterior Primitive Streak",
     #                           max_padj=0.01, min_logfc=0.5,
-    #                           groupby="cell_type", save_dir="discrimination_plot")
+    #                           groupby="cell_type", save_dir="discrimination_plot")child2_type="Anterior Primitive Streak"
     fate_decision_analysis(adata, parent_type="Primitive Streak",
-                           child1_type="Nascent mesoderm", child2_type="Anterior Primitive Streak", n_genes=400, do_child_compare=True)
-
+                           child1_type="Nascent mesoderm", pval=0.001, split_up_down=True)
+    fate_decision_analysis(adata, parent_type="Primitive Streak",
+                           child1_type="Anterior Primitive Streak", pval=0.001, split_up_down=True)

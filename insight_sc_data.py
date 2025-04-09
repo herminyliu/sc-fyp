@@ -7,6 +7,7 @@ import numpy as np
 from typing import Optional, Callable, Tuple
 from anndata import AnnData
 
+
 # ALL the function below should be used in the 'if __name__ == "__main__"' of insight_sc_data.py
 
 
@@ -40,7 +41,8 @@ def plot_scatter(adata, x, y, title=None, filename="scatter_n_genes_by_total_cou
     save_figure(filename)
 
 
-def plot_cell_counts_scatterplot(adata, y_key="batch", x_key="cell_time", filename="batch_counts.png", is_proportion=False):
+def plot_cell_counts_scatterplot(adata, y_key="batch", x_key="cell_time", filename="batch_counts.png",
+                                 is_proportion=False):
     """
     Generate a scatter plot visualizing cell numbers/proportion in
     two dimension of observation annotation using seaborn.scatterplot.
@@ -57,6 +59,8 @@ def plot_cell_counts_scatterplot(adata, y_key="batch", x_key="cell_time", filena
 
     # 计算每个批次中每个细胞发育阶段的单细胞数量
     counts = adata.obs.groupby([x_key, y_key]).size().unstack(fill_value=0)
+    if x_key == "cell_time":
+        counts = counts.reindex(["E6.5", "E6.75", "E7.0", "E7.25", "E7.5"])
 
     if is_proportion:
         counts = counts.div(counts.sum(axis=1), axis=0)
@@ -66,6 +70,22 @@ def plot_cell_counts_scatterplot(adata, y_key="batch", x_key="cell_time", filena
 
     # Filter zeros out
     counts_long = counts_long[counts_long["count"] > 0]
+
+    if y_key == "cell_time":
+        counts_long[y_key] = pd.Categorical(
+            counts_long[y_key],
+            categories=["E6.5", "E6.75", "E7.0", "E7.25", "E7.5"],
+            ordered=True
+        )
+
+    if x_key == "cell_type":
+        counts_long[x_key] = pd.Categorical(
+            counts_long[x_key],
+            categories=["Epiblast", "Primitive Streak", "Nascent mesoderm", "Mixed mesoderm", "Mesenchyme",
+                        "Haematoendothelial progenitors", "Blood progenitors 1", "Blood progenitors 2",
+                        "Anterior Primitive Streak", "Def. endoderm", "Gut", "Visceral endoderm", "ExE endoderm"],
+            ordered=True
+        )
 
     # 使用 seaborn 绘制点图
     plt.figure(figsize=(8, 6))
@@ -82,6 +102,7 @@ def plot_cell_counts_scatterplot(adata, y_key="batch", x_key="cell_time", filena
 
     # 添加标题和标签
     plt.title(f"Batch Count by {x_key}")
+    plt.xticks(rotation=45, ha='right', va='top', rotation_mode='anchor')
     plt.xlabel(x_key)
     plt.ylabel(y_key)
     title = "Count"
@@ -220,7 +241,7 @@ def plot_grouped_violin(
         ncols=n_groups,
         figsize=(figsize[0] * max(n_groups, 1), figsize[1]),
         sharey=True
-                 )
+    )
     axes = np.array(axes).flatten()  # Handle single-subplot case
 
     # Generate plots for each group
@@ -294,7 +315,6 @@ def plot_gene_frequency_by_time(adata, time_key='cell_time', filename="gene_freq
         # 计算每个基因在当前批次中的表达频数
         gene_freq = np.sum(time_data.X, axis=0)
         gene_freq_dict[time] = gene_freq
-
 
     # 遍历每个batch，绘制小提琴图
     for i, time in enumerate(time_list):
@@ -383,8 +403,10 @@ def plot_pair_violin(adata, filename="grouped_violin.png"):
     save_figure(filename)
 
 
-def plot_gene_regulation_heatmap(adata, feature_key: str, feature_values: list, save_csv_path="gene_regulation_heatmap_data.csv",
-                                 pval_threshold: float=0.05, figsize=(10, 8), cmap='bwr', save_fig_path="gene_regulation_heatmap.png"):
+def plot_gene_regulation_heatmap(adata, feature_key: str, feature_values: list,
+                                 save_csv_path="gene_regulation_heatmap_data.csv",
+                                 pval_threshold: float = 0.05, figsize=(10, 8), cmap='bwr',
+                                 save_fig_path="gene_regulation_heatmap.png"):
     """
     Plot a heatmap of up-regulated and down-regulated genes based on any cell feature.
 
@@ -410,7 +432,7 @@ def plot_gene_regulation_heatmap(adata, feature_key: str, feature_values: list, 
         raise ValueError("No feature values provided.")
     if len(feature_values) < len(adata.obs[feature_key].values.unique()):
         print(f"Warning: Provided {feature_values} are not complete."
-                         f"There are {len(adata.obs[feature_key].values.unique())} unique {feature_key} annotation values for the observation.")
+              f"There are {len(adata.obs[feature_key].values.unique())} unique {feature_key} annotation values for the observation.")
     if len(feature_values) > len(adata.obs[feature_key].values.unique()):
         raise ValueError(f"Provided {feature_values} overflow."
                          f"There are {len(adata.obs[feature_key].values.unique())} unique {feature_key} annotation values for the observation.")
@@ -513,10 +535,10 @@ if __name__ == "__main__":
     # ALL the images produced will be saved in FIG_FOLDER_PATH via the function save_figure.
 
     FIG_FOLDER_PATH = "./insight_figures"  # 图片保存文件夹路径
-    adata = sc.read_h5ad("raw_627d.h5ad")
-    adata.obs.rename(
-        columns={"stage": "cell_time", "cell": "cell_ID", "sequencing.batch": "batch", "celltype": "cell_type",
-                 "sample": "embryo_ID"}, inplace=True)
+    adata = sc.read_h5ad("h5ads/final_627_combat_re.h5ad")
+    # adata.obs.rename(
+    #     columns={"stage": "cell_time", "cell": "cell_ID", "sequencing.batch": "batch", "celltype": "cell_type",
+    #              "sample": "embryo_ID"}, inplace=True)
     # 调用绘图函数并保存图片
     # plot_scatter(adata, x="total_counts", y="n_genes_by_counts", title="Total Counts vs n_genes_by_counts", filename="scatter_total_counts_vs_n_genes.png")
     # plot_cell_time_proportion(adata, filename="cell_time_proportion.png")
@@ -529,7 +551,22 @@ if __name__ == "__main__":
     # plot_gene_frequency_by_time(adata)
     # plot_grouped_violin(adata)
     # plot_cell_time_counts(adata)
-    plot_cell_counts_scatterplot(adata, filename="627_cell_type_batch_counts.png")
+    plot_cell_counts_scatterplot(adata, y_key="batch", x_key="cell_time", filename="627_cell_time_batch_counts.png")
+    cell_type_lst_a = ["Epiblast", "Primitive Streak", "Anterior Primitive Streak",
+                       "Def. endoderm", "Gut", "Visceral endoderm", "ExE endoderm"]
+    cell_type_lst_b = ["Epiblast", "Primitive Streak", "Nascent mesoderm", "Mixed mesoderm", "Mesenchyme",
+                       "Haematoendothelial progenitors", "Blood progenitors 1", "Blood progenitors 2"]
+    cell_type_lst_c = list(set(cell_type_lst_a + cell_type_lst_b))
+    # NOTE: cell_50327 cell_79163 are outlier cells, cell_86931 filtered.
+    # NOTE: cell_29635 cell_51875 cell_50514 cell_837, filtered.
+    sub_adata = adata[adata.obs['cell_type'].isin(cell_type_lst_c), :]
+    outlier_cells = ["cell_50327", "cell_79163", "cell_46746", "cell_29635", "cell_51875", "cell_50514", "cell_837",
+                     "cell_86931"]
+    sub_adata = sub_adata[~sub_adata.obs_names.isin(outlier_cells), :]
+
+    plot_cell_counts_scatterplot(sub_adata, y_key="batch", x_key="cell_type", filename="627_cell_type_batch_counts.png")
+    plot_cell_counts_scatterplot(sub_adata, y_key="cell_time", x_key="cell_type",
+                                 filename="627_cell_time_type_counts.png")
     # plot_gene_regulation_heatmap(adata=adata, feature_key="cell_type", save_fig_path="type_before_correction.png",
     #                              save_csv_path="type_before_correction.csv",
     #                              feature_values=["Primitive_Streak", "Mixed_mesoderm", "Nascent_mesoderm",

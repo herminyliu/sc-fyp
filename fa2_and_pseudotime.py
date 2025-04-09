@@ -50,16 +50,22 @@ def paga_scatter(ps_adata: AnnData, color):
     return ps_adata
 
 
-def plot_fa_color_pseudotime(p_adata):
+def plot_fa_color_pseudotime(p_adata, color: list[str] = None, fa_titie: str = None, umap_title: str = None):
     """
-    Plot 2D ForceAtlas manifold map coloring with p_adata.obs['dpt_order_indices']
+    Plot 2D ForceAtlas manifold map and UMAP map coloring with p_adata.obs['dpt_order_indices']
 
     Parameters:
         adata (AnnData): Annotated data matrix.
-
+        :param umap_title:
+        :param fa_titie:
+        :param p_adata:
+        :param color:
     Returns:
         No returns
+
     """
+    if color is None:
+        color = ['normalized_dpt']
     if 'dpt_order_indices' not in p_adata.obs_keys():
         raise KeyError(f"'dpt_order_indices' not found. Please compute dpt first.")
     tl_drawgraph_layout = ['fr', 'drl', 'kk', 'grid_fr', 'lgl', 'rt', 'rt_circular', 'fa']
@@ -71,29 +77,32 @@ def plot_fa_color_pseudotime(p_adata):
     if key_missing_flag:
         raise KeyError(f"'X_draw_graph_['fr', 'drl', 'kk', 'grid_fr', 'lgl', 'rt', 'rt_circular', 'fa']' not found. Please compute tl.draw_graph first.")
 
-    # Normalize 'dpt_order_indices' to a range of [0, 1] for color mapping
-    dpt_order_indices = p_adata.obs['dpt_order_indices']
-    normalized_dpt = (dpt_order_indices - dpt_order_indices.min()) / (dpt_order_indices.max() - dpt_order_indices.min())
-    # Add normalized pseudotime to p_adata.obs for coloring
-    p_adata.obs['normalized_dpt'] = normalized_dpt
+    if 'normalized_dpt' in color:
+        # Normalize 'dpt_order_indices' to a range of [0, 1] for color mapping
+        dpt_order_indices = p_adata.obs['dpt_order_indices']
+        normalized_dpt = (dpt_order_indices - dpt_order_indices.min()) / (dpt_order_indices.max() - dpt_order_indices.min())
+        # Add normalized pseudotime to p_adata.obs for coloring
+        p_adata.obs['normalized_dpt'] = normalized_dpt
 
     # Plot the 2D manifold map with custom coloring
     sc.pl.draw_graph(
         adata=p_adata,
-        color='normalized_dpt',  # Use normalized pseudotime values for coloring
+        color=color,  # Use normalized pseudotime values for coloring
         color_map="viridis",        # Apply the colormap
-        title='ForceAtlas2 with Pseudotime Coloring',
+        # title=fa_titie,
         show=False,
-        save=".png"
+        save=f"{color[3:6]}.png",
+        ncols=3
     )
 
     sc.pl.umap(
         p_adata,
-        color='normalized_dpt',  # Use normalized pseudotime values for coloring
+        color=color,  # Use normalized pseudotime values for coloring
         color_map="viridis",
-        title='UMAP with Pseudotime Coloring',
+        # title=umap_title,
         show=False,
-        save="pseudotime.png")
+        save=f"{color[3:6]}.png",
+        ncols=3)
 
 
 def diff(dm_adata, color: list[str]):
@@ -268,7 +277,6 @@ def setting():
 if __name__ == "__main__":
 
     SAVING_FIG_FOLDER = './temp4'
-    # This module is for debugging.
     setting()
     adata = sc.read_h5ad("h5ads/final_627_combat_re.h5ad")
     cell_type_lst_a = ["Epiblast", "Primitive Streak", "Anterior Primitive Streak",
@@ -276,27 +284,33 @@ if __name__ == "__main__":
     cell_type_lst_b = ["Epiblast", "Primitive Streak", "Nascent mesoderm", "Mixed mesoderm", "Mesenchyme",
                        "Haematoendothelial progenitors", "Blood progenitors 1", "Blood progenitors 2"]
     cell_type_lst_c = list(set(cell_type_lst_a + cell_type_lst_b))
-    # NOTE: cell_50327 cell_79163 are outlier cells, cell_86931 filtered.
+    # NOTE: cell_50327 cell_79163 cell_86931 are outlier cells, filtered.
     # NOTE: cell_29635 cell_51875 cell_50514 cell_837, filtered.
     sub_adata = adata[adata.obs['cell_type'].isin(cell_type_lst_c), :]
     outlier_cells = ["cell_50327", "cell_79163", "cell_46746", "cell_29635", "cell_51875", "cell_50514", "cell_837",
                      "cell_86931"]
     sub_adata = sub_adata[~sub_adata.obs_names.isin(outlier_cells), :]
     sub_adata = paga(p_adata=sub_adata, color="cell_type", groups="cell_type")
-    # sub_adata = paga_scatter(ps_adata=sub_adata, color="cell_type")
-    sc.pp.neighbors(sub_adata)
-    sub_adata = pseudotime(sub_adata, n_branchings=1)
+    sub_adata = paga_scatter(ps_adata=sub_adata, color="cell_type")
+
+    # sub_adata = pseudotime(sub_adata, n_branchings=1)
     with open("with_child_comp_genes.txt", "r") as file:
-        gene_lst = [line.strip() for i, line in enumerate(file) if i < 20]
-    plot_pseudotime(sub_adata, gene_list=gene_lst, cell_sample_step=1)
-    plot_fa_color_pseudotime(sub_adata)
+        gene_lst = [line.strip() for i, line in enumerate(file) if i < 400]
+    # plot_pseudotime(sub_adata, gene_list=gene_lst, cell_sample_step=1)
+    # up_gene_lst = ["Rbms1", "Car14", "Qprt", "Frzb", "Pmaip1", "Ccnd2"]
+    # down_gene_lst = ["Cldn6", "Npm1", "Hnrnpa1", "Sgce", "Dap", "Stx7", "Ctsc", "Slc16a1", "Apoe", "Glrx", "Sms", "Nefl", "Slc25a4", "Ctsc"]
+    # root_gene_lst = ["Dnmt3b", "Rab25", "Igfbp2", "Arl4c", "Smad1", "Bambi", "T", "Trh", "Lhx1", "Pdzd4"]
+    prof_selected = ["Foxa2", "T", "Mesp1", "Lhx1", "Lhx6", "Gsc", "Hhex", "Cer1", "Phlda2", "Snai1", "Mixl1"]
+    # plot_fa_color_pseudotime(sub_adata, color=up_gene_lst)
+    # plot_fa_color_pseudotime(sub_adata, color=down_gene_lst)
+    plot_fa_color_pseudotime(sub_adata, color=prof_selected)
 
 
 
     # 是否一定要先运行paga才再能运行paga_scatter呢？sc.tl.paga, sc.pl.paga, sc.tl.draw_graph, sc.pl.draw_graph函数逻辑复杂。
     # 实验证明不一定需要！因为在之前的绘制UMAP图时就跑过PAGA了。因为UMAP图的initial position就是PAGA的节点。sc.pl.draw_graph会自动判断传入的color参数是否为var中的基因，或对obs的注释。
     # TODO：
-    # 如果为obs的categories类注释，则会自动细胞群体着色。如果为var_name中的基因，那么自动按照各单细胞中该基因的表达量着色。那么着色的值是什么？是scale后的那个表达量吗？
-    # 而且draw_graph的得到的散点图的横轴纵轴的含义是？散点的分布和UMAP图的分布明显不一样，那么这又是什么算法？
+    #   如果为obs的categories类注释，则会自动细胞群体着色。如果为var_name中的基因，那么自动按照各单细胞中该基因的表达量着色。那么着色的值是什么？是scale后的那个表达量吗？
+    #   而且draw_graph的得到的散点图的横轴纵轴的含义是？散点的分布和UMAP图的分布明显不一样，那么这又是什么算法？
 
 
